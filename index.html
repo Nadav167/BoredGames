@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>BoredGames</title>
+<meta name="theme-color" content="#5b3fd6">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BoredGames">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <button class="icon-btn" id="menuBtn" aria-label="תפריט">☰<span class="badge" id="menuBadge" hidden></span></button>
+  <div class="brand" id="brandHome">Bored<b>Games</b></div>
+  <div class="me" id="meNick"></div>
+</header>
+
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div class="drawer-logo">🎲</div>
+    <div>
+      <div class="drawer-title">BoredGames</div>
+      <div class="drawer-sub" id="drawerNick"></div>
+    </div>
+  </div>
+  <nav>
+    <button data-nav="home">🏠 משחקים</button>
+    <button data-nav="friends">👥 חברים <span class="badge inline" id="friendsBadge" hidden></span></button>
+    <button data-nav="stats">📊 הסטטיסטיקות שלי</button>
+    <button data-nav="about">ℹ️ אודות</button>
+  </nav>
+  <label class="toggle-row">
+    <span>🌙 מצב לילה</span>
+    <input type="checkbox" id="darkToggle"><span class="switch"></span>
+  </label>
+</aside>
+<div class="scrim" id="scrim"></div>
+
+<div id="invites"></div>
+<main id="view"><div class="center-msg"><div class="spinner"></div></div></main>
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast"></div>
+
+<script type="module" src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+</script>
+</body>
+</html>
