@@ -160,7 +160,7 @@ function showWelcome() {
     finally { claiming = false; if ($('#nickGo')) $('#nickGo').disabled = false; }
   };
   $('#nickGo').onclick = go_;
-  $('#nickIn').onkeydown = e => e.key === 'Enter' && go_();
+  $('#nickIn').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); go_(); } };
 }
 
 // signed in (e.g. new Google user) but no nickname yet
@@ -185,7 +185,7 @@ function showNickSetup(prefill) {
     finally { claiming = false; if ($('#nickGo')) $('#nickGo').disabled = false; }
   };
   $('#nickGo').onclick = go_;
-  $('#nickIn').onkeydown = e => e.key === 'Enter' && go_();
+  $('#nickIn').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); go_(); } };
   $('#nickOut').onclick = () => signOut(auth).then(() => location.reload());
 }
 
@@ -614,7 +614,7 @@ function showFriends() {
     $('#fNick').value = ''; toast('בקשת חברות נשלחה ✓');
   };
   $('#fSend').onclick = send;
-  $('#fNick').onkeydown = e => e.key === 'Enter' && send();
+  $('#fNick').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); send(); } };
   renderFriendsLists();
 }
 
