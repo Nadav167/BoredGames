@@ -386,15 +386,62 @@ async function leaveGame() {
 }
 
 // ---------- Taki UI ----------
-const CARD_FACE = {
-  num: c => [c.v, ''], stop: () => ['⛔', 'עצור'], dir: () => ['⇄', 'שנה כיוון'], plus2: () => ['+2', ''],
-  plus: () => ['+', 'פלוס'], taki: () => ['T', 'טאקי'], color: () => ['🎨', 'שנה צבע'], super: () => ['ST', 'סופר טאקי'], king: () => ['👑', 'מלך'],
+// Real-card look: white face, coloured frame, big centre symbol, corner indices
+const SYM = {
+  stop: col => `<svg viewBox="0 0 60 60" class="sym"><polygon points="18,3 42,3 57,18 57,42 42,57 18,57 3,42 3,18" fill="${col}" stroke="#fff" stroke-width="3"/><text x="30" y="37" text-anchor="middle" font-size="16" font-weight="900" fill="#fff" font-family="Rubik,sans-serif">STOP</text></svg>`,
+  dir: col => `<svg viewBox="0 0 60 60" class="sym"><g fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round"><path d="M12 24 A18 18 0 0 1 46 18"/><path d="M48 36 A18 18 0 0 1 14 42"/></g><polygon points="40,8 54,19 38,26" fill="${col}"/><polygon points="20,52 6,41 22,34" fill="${col}"/></svg>`,
+  color: () => `<svg viewBox="0 0 60 60" class="sym"><g stroke="#fff" stroke-width="2"><path d="M30 30 L30 4 A26 26 0 0 1 56 30 Z" fill="var(--red)"/><path d="M30 30 L56 30 A26 26 0 0 1 30 56 Z" fill="var(--yellow)"/><path d="M30 30 L30 56 A26 26 0 0 1 4 30 Z" fill="var(--green)"/><path d="M30 30 L4 30 A26 26 0 0 1 30 4 Z" fill="var(--blue)"/></g></svg>`,
+  king: () => `<svg viewBox="0 0 60 60" class="sym"><path d="M8 44 L5 16 L19 28 L30 8 L41 28 L55 16 L52 44 Z" fill="#f4b400" stroke="#9a6b00" stroke-width="2.5" stroke-linejoin="round"/><rect x="8" y="46" width="44" height="7" rx="2" fill="#f4b400" stroke="#9a6b00" stroke-width="2.5"/><circle cx="30" cy="33" r="4" fill="#e53935"/><circle cx="18" cy="37" r="3" fill="#1e78e0"/><circle cx="42" cy="37" r="3" fill="#2e9e4f"/></svg>`,
 };
-function cardHtml(c, extra = '', attrs = '') {
-  const [big, lbl] = CARD_FACE[c.t](c);
-  const cls = c.t === 'king' ? 'king' : (c.c || 'wild');
-  return `<div class="tk ${cls} ${extra}" ${attrs}>${c.t === 'num' ? `<span class="corner">${big}</span>` : ''}<span class="big">${big}</span>${lbl ? `<span class="lbl">${lbl}</span>` : ''}</div>`;
+const CORNER = { num: c => c.v, stop: () => 'S', dir: () => '⇄', plus2: () => '+2', plus: () => '+', taki: () => 'T', color: () => '◑', super: () => 'ST', king: () => '♚' };
+function cardFace(c) {
+  const col = c.c ? `var(--${c.c})` : '#222';
+  switch (c.t) {
+    case 'num': return `<span class="num">${c.v}</span>`;
+    case 'plus2': return `<span class="num sm">+2</span>`;
+    case 'plus': return `<span class="num">+</span>`;
+    case 'taki': return `<span class="word">TAKI</span>`;
+    case 'super': return `<span class="word super"><small>SUPER</small><span>T</span><span>A</span><span>K</span><span>I</span></span>`;
+    default: return SYM[c.t](col);
+  }
 }
+function cardHtml(c, extra = '', attrs = '') {
+  const cls = c.c || (c.t === 'king' ? 'king' : 'wild');
+  const k = CORNER[c.t](c);
+  return `<div class="tk ${cls} t-${c.t} ${extra}" ${attrs}>
+    <span class="ix ix1">${k}</span><div class="oval"></div><div class="face">${cardFace(c)}</div><span class="ix ix2">${k}</span></div>`;
+}
+const cardBack = (extra = '', inner = '') => `<div class="tk back ${extra}"><div class="back-in">${inner || '<b>BG</b>'}</div></div>`;
+const COLOR_ORDER = { red: 0, yellow: 1, green: 2, blue: 3, undefined: 4 };
+const TYPE_ORDER = ['num', 'plus2', 'plus', 'stop', 'dir', 'taki', 'color', 'super', 'king'];
+const sortHand = h => [...h].sort((a, b) => (COLOR_ORDER[a.c] - COLOR_ORDER[b.c]) || (TYPE_ORDER.indexOf(a.t) - TYPE_ORDER.indexOf(b.t)) || ((a.v || 0) - (b.v || 0)));
+
+// lay the hand out as a fan (arch)
+function layoutFan() {
+  const fan = $('.fan'); if (!fan) return;
+  const cards = [...fan.children], n = cards.length;
+  const W = fan.getBoundingClientRect().width || view.clientWidth - 16;
+  const cw = n > 16 ? 54 : n > 10 ? 60 : 68, ch = cw * 1.46;
+  const total = Math.min(5 * (n - 1), 44);
+  const sway = cw * 1.46 * Math.sin(total / 2 * Math.PI / 180); // rotated corners stick out
+  const spacing = n > 1 ? Math.min(cw * 0.7, (W - cw - 1.7 * sway - 12) / (n - 1)) : 0;
+  const R = Math.max(W * 1.1, 380);
+  let maxY = 0;
+  cards.forEach((el, i) => {
+    const t = n > 1 ? i / (n - 1) - 0.5 : 0;
+    const ang = total * t, rad = ang * Math.PI / 180;
+    const x = W / 2 + (i - (n - 1) / 2) * spacing - cw / 2;
+    const y = R * (1 - Math.cos(rad));
+    maxY = Math.max(maxY, y);
+    el.style.setProperty('--w', cw + 'px');
+    el.style.left = (x + 0) + "px";
+    el.style.top = (18 + y) + 'px';
+    el.style.setProperty('--a', ang + 'deg');
+    el.style.zIndex = i + 1;
+  });
+  fan.style.height = (ch + maxY + 34) + 'px';
+}
+window.addEventListener('resize', layoutFan);
 const colorChip = c => `<span class="color-chip" style="background:var(--${c})"></span>`;
 
 function renderTaki(g) {
@@ -420,7 +467,6 @@ function renderTaki(g) {
   let lastTxt = '';
   if (s.last && s.last.p) lastTxt = s.last.drew != null ? `${esc(names(s.last.p))} לקח ${s.last.drew} קלפים` : `${esc(names(s.last.p))} שם קלף`;
 
-  const scroll = $('.hand')?.scrollLeft;
   view.innerHTML = `
     <div class="table">
       <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button>
@@ -428,12 +474,13 @@ function renderTaki(g) {
       <div class="opps">${others.map(p => `
         <div class="opp ${Taki.current(s) === p && !s.winner ? 'turn' : ''}">
           <div class="n">${esc(names(p))}</div>
-          <div class="mini-cards">${'<span></span>'.repeat(Math.min(s.hands[p].length, 10))}</div>
+          <div class="mini-cards">${'<span></span>'.repeat(Math.min(s.hands[p].length, 12))}</div>
           <div class="c">${s.hands[p].length} קלפים</div>
         </div>`).join('')}</div>
       <div class="center">
         <div class="piles">
-          <button class="deck-btn ${myTurn && !s.taki && !hand.some(c => Taki.canPlay(s, c)) ? 'hint' : ''}" id="deckBtn">${s.plus2 ? `קח ${s.plus2}` : 'קופה'}</button>
+          <button class="deck-btn ${myTurn && !s.taki && !hand.some(c => Taki.canPlay(s, c)) ? 'hint' : ''}" id="deckBtn">
+            ${cardBack('deckcard', `<b>BG</b><span>${s.plus2 ? `קח ${s.plus2}` : 'קופה'}</span>`)}</button>
           ${cardHtml(t, 'topcard')}
         </div>
         <div>צבע נוכחי: ${colorChip(s.color)} ${Taki.COLOR_HE[s.color]}</div>
@@ -442,14 +489,14 @@ function renderTaki(g) {
       </div>
       <div class="hand-wrap">
         <div class="hand-title">הקלפים שלך (${hand.length})</div>
-        <div class="hand">${hand.map(c => {
+        <div class="fan">${sortHand(hand).map(c => {
           const ok = myTurn && Taki.canPlay(s, c);
           return cardHtml(c, myTurn ? (ok ? 'playable' : 'dim') : '', `data-card="${c.id}"`);
         }).join('')}</div>
         ${myTurn && s.taki ? '<div class="hand-actions"><button class="btn" id="closeTaki">סגור טאקי</button></div>' : ''}
       </div>
     </div>`;
-  if (scroll) $('.hand').scrollLeft = scroll;
+  layoutFan();
 
   $('#exitBtn').onclick = () => {
     modal(`<h3>לצאת מהמשחק?</h3>
