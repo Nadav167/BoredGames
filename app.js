@@ -11,6 +11,7 @@ import * as Taki from './games/taki.js';
 import * as Imp from './games/imposter.js';
 import * as Ck from './games/checkers.js';
 import * as Bg from './games/backgammon.js';
+import * as Pe from './games/perudo.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -35,7 +36,7 @@ const GAMES = [
   { id: 'shithead', name: 'שיט-הד', ico: '💩' },
   { id: 'durak', name: 'דוראק', ico: '🂡' },
   { id: 'eight', name: 'שמונה וחצי', ico: '8½' },
-  { id: 'perudo', name: 'פרודו', ico: '🎰' },
+  { id: 'perudo', name: 'פרודו', ico: '🎰', ready: true, min: 2, max: 10, bots: false },
   { id: 'rummy', name: 'רמי', ico: '🀄' },
   { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈' },
   { id: 'chess', name: 'שחמט', ico: '♟️' },
@@ -322,6 +323,7 @@ async function createGame(type, bots, level) {
   const g = { type, host: me.uid, status: 'lobby', players, createdAt: Date.now() };
   if (type === 'imposter') g.settings = Imp.DEFAULT_SETTINGS;
   if (type === 'checkers') g.settings = { rules: 'il' };
+  if (type === 'perudo') g.settings = Pe.DEFAULT_SETTINGS;
   if (bots) { g.status = 'playing'; g.state = type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
@@ -343,6 +345,7 @@ function openGame(gid) {
     else if (g.type === 'imposter') renderImposter(g);
     else if (g.type === 'checkers') { renderCheckers(g); checkersTick(g); }
     else if (g.type === 'backgammon') { renderBackgammon(g); bgTick(g); }
+    else if (g.type === 'perudo') renderPerudo(g);
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -367,6 +370,7 @@ function renderLobby(g) {
     </div>
     ${g.type === 'imposter' ? imposterSettingsHtml(g, isHost) : ''}
     ${g.type === 'checkers' ? checkersSettingsHtml(g, isHost) : ''}
+    ${g.type === 'perudo' ? perudoSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -384,6 +388,7 @@ function renderLobby(g) {
   if (isHost) {
     if (g.type === 'imposter') bindImposterSettings(g);
     if (g.type === 'checkers') bindCheckersSettings();
+    if (g.type === 'perudo') bindPerudoSettings(g);
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -393,6 +398,7 @@ function renderLobby(g) {
     $('#startBtn').onclick = () => g.type === 'imposter' ? startImposter(g, g.state?.round || 0)
       : g.type === 'checkers' ? startCheckers(g)
       : g.type === 'backgammon' ? startBg(g)
+      : g.type === 'perudo' ? startPerudo(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -1097,6 +1103,159 @@ function bgTick(g) {
     } catch {}
     finally { bgBotBusy = false; if (curGid === gid && curGame) bgTick(curGame); }
   }, s.dice.length ? 1300 : 700);
+}
+
+// ---------- Perudo UI ----------
+const peSettings = g => ({ ...Pe.DEFAULT_SETTINGS, ...(g.settings || {}) });
+function perudoSettingsHtml(g, isHost) {
+  const st = peSettings(g);
+  const modeTxt = { online: '📱 אונליין – מציעים באפליקציה', table: '🍻 סביב השולחן – מציעים בקול, האפליקציה רק מגלגלת' };
+  if (!isHost) return `<div class="card"><div class="muted">הגדרות</div><p>${modeTxt[st.mode]}</p>
+    <p class="muted">${st.calza ? 'קאלסה ✓' : 'בלי קאלסה'} · ${st.palifico ? 'פאליפיקו ✓' : 'בלי פאליפיקו'}</p></div>`;
+  return `<div class="card"><div class="muted" style="margin-bottom:8px">מצב משחק</div>
+    <div class="chips">${Object.entries(modeTxt).map(([k, t]) => `<button class="chip ${st.mode === k ? 'on' : ''}" data-pmode="${k}">${t}</button>`).join('')}</div>
+    <label class="stat-row"><span>קאלסה <span class="muted" style="font-size:13px">(ניחוש מדויק = מרוויחים קובייה)</span></span><input type="checkbox" id="peCalza" ${st.calza ? 'checked' : ''}></label>
+    <label class="stat-row"><span>פאליפיקו <span class="muted" style="font-size:13px">(מי שנשאר עם קובייה אחת: סיבוב בלי ג'וקרים)</span></span><input type="checkbox" id="pePal" ${st.palifico ? 'checked' : ''}></label></div>`;
+}
+function bindPerudoSettings(g) {
+  const st = peSettings(g), sref = ref(db, `games/${curGid}/settings`);
+  view.querySelectorAll('[data-pmode]').forEach(b => b.onclick = () => update(sref, { ...st, mode: b.dataset.pmode }));
+  $('#peCalza').onchange = e => update(sref, { ...st, calza: e.target.checked });
+  $('#pePal').onchange = e => update(sref, { ...st, palifico: e.target.checked });
+}
+const startPerudo = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Pe.newGame(orderOf(g.players), peSettings(g)) });
+
+const peDie = (n, cls = '') => n === 1 ? `<div class="die pdie paco ${cls}"><span>★</span></div>` : dieHtml(n, false).replace('class="die', `class="die pdie ${cls}`);
+let peShow = false, peRoundSeen = 0, peFace = 0, peQty = 0, peBidKey = '';
+function renderPerudo(g) {
+  view.classList.add('game-mode');
+  const s = Pe.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const table = s.mode === 'table';
+  if (peRoundSeen !== s.round) { peShow = !table; peRoundSeen = s.round; }
+  const myDice = s.dice[me.uid] || [];
+  const alive = Pe.alive(s);
+  const myTurn = !table && s.phase === 'bid' && s.turn === me.uid && !s.winner;
+  const bidKey = s.round + JSON.stringify(s.bid);
+  if (peBidKey !== bidKey) {
+    peBidKey = bidKey;
+    peFace = s.bid ? s.bid.f : 0; peQty = s.bid ? Pe.minBid(s.bid, s.bid.f, s.palRound) : 1;
+  }
+  const faceTxt = f => f === 1 ? 'פאקו (1)' : f;
+  const bidTxt = b => `<b>${b.q}</b> × ${peDie(b.f, 'mini')}`;
+
+  const players = `<div class="opps">${s.order.map(p => `
+    <div class="opp ${!table && s.phase === 'bid' && s.turn === p && !s.winner ? 'turn' : ''} ${s.count[p] ? '' : 'out'}">
+      <div class="n">${esc(names(p))}${p === me.uid ? ' (אתה)' : ''}</div>
+      <div class="c">${s.count[p] ? '🎲'.repeat(s.count[p]) : 'בחוץ'}</div></div>`).join('')}</div>`;
+
+  let main = '';
+  if (s.phase === 'bid') {
+    const mine = s.count[me.uid] > 0;
+    main = `
+      ${s.palRound ? '<div class="status" style="background:#b3261e">⚠️ סיבוב פאליפיקו: אין ג\'וקרים, ואי אפשר להחליף מספר</div>' : ''}
+      <div class="center" style="flex:0;gap:10px">
+        ${mine ? `<button class="my-dice ${peShow ? '' : 'covered'}" id="myDice">${peShow ? myDice.map(d => peDie(d)).join('') : '<span>🤫 לחץ כדי לראות את הקוביות שלך</span>'}</button>`
+          : '<div class="status">יצאת מהמשחק. אפשר להמשיך לצפות</div>'}
+        <div class="muted" style="color:#fff;opacity:.8">סה״כ ${Pe.totalDice(s)} קוביות על השולחן</div>
+      </div>`;
+    if (table) {
+      main += `<div class="card pe-card"><b>מכריזים בקול</b>
+        <p class="muted">${s.palRound ? 'סיבוב פאליפיקו – 1 הוא מספר רגיל.' : 'כל 1 (פאקו) הוא ג\'וקר.'} כשמישהו קורא "דודו!" המארח חושף את הקוביות של כולם.</p>
+        ${isHost ? '<button class="btn block" id="peReveal">👀 חשוף את כל הקוביות</button>' : ''}</div>`;
+    } else {
+      const hist = s.history.slice(-4).map(b => `<span class="pill">${esc(names(b.by))}: ${b.q}×${faceTxt(b.f)}</span>`).join(' ');
+      main += `<div class="card pe-card">
+        <div class="muted">ההצעה הנוכחית</div>
+        <div class="cur-bid">${s.bid ? `${bidTxt(s.bid)} <span class="muted">(${esc(names(s.bid.by))})</span>` : '<span class="muted">עוד אין הצעה</span>'}</div>
+        ${hist ? `<div class="seq">${hist}</div>` : ''}
+        ${myTurn ? `
+          <div class="muted" style="margin-top:12px">ההצעה שלך:</div>
+          <div class="faces">${[1, 2, 3, 4, 5, 6].map(f => {
+            const ok = Pe.minBid(s.bid, f, s.palRound) <= Pe.totalDice(s) && !(s.palRound && s.bid && f !== s.bid.f);
+            return `<button class="face-btn ${peFace === f ? 'on' : ''}" data-face="${f}" ${ok ? '' : 'disabled'}>${peDie(f, 'mini')}</button>`; }).join('')}</div>
+          <div class="row" style="justify-content:center;margin:10px 0">
+            <button class="btn secondary" id="qMinus">−</button><div class="qty">${peFace ? peQty : '–'}</div><button class="btn secondary" id="qPlus">+</button></div>
+          <button class="btn block" id="peBid" ${peFace && Pe.validBid(s, { q: peQty, f: peFace }) ? '' : 'disabled'}>הצע ${peFace ? `${peQty} × ${faceTxt(peFace)}` : ''}</button>
+          ${s.bid ? '<button class="btn danger block" id="peDudo" style="margin-top:8px">דודו! 🤥</button>' : ''}`
+        : `<p class="muted" style="text-align:center">התור של ${esc(names(s.turn))}…</p>`}
+        ${s.calza && s.bid && s.bid.by !== me.uid && mine ? '<button class="btn secondary block" id="peCalza" style="margin-top:8px">🎯 קאלסה! (בדיוק)</button>' : ''}
+      </div>`;
+    }
+  } else {
+    const r = s.reveal;
+    const f = r?.bid?.f;
+    const hit = d => f && (d === f || (!s.palRound && f !== 1 && d === 1));
+    let summary = '';
+    if (r) {
+      summary = `<div class="cur-bid">${esc(names(r.caller))} קרא ${r.type === 'dudo' ? 'דודו' : 'קאלסה'} על ${bidTxt(r.bid)}</div>
+        <div style="font-size:20px;margin:6px 0">יש בפועל: <b>${r.actual}</b></div>
+        <div class="status" style="display:inline-block">${r.gainer ? `🎯 ${esc(names(r.gainer))} צדק ומרוויח קובייה!` : `${esc(names(r.loser))} מפסיד קובייה`}</div>`;
+    } else {
+      const counts = [1, 2, 3, 4, 5, 6].map(x => { let n = 0; for (const p of alive) for (const d of s.dice[p]) if (d === x || (!s.palRound && x !== 1 && d === 1)) n++; return [x, n]; });
+      summary = `<div class="muted">כמה יש מכל מספר${s.palRound ? '' : ' (כולל ג\'וקרים)'}:</div>
+        <div class="face-counts">${counts.map(([x, n]) => `<div>${peDie(x, 'mini')}<b>${n}</b></div>`).join('')}</div>`;
+    }
+    main = `<div class="card pe-card" style="text-align:center">${summary}</div>
+      <div class="card pe-card">${alive.concat(r?.loser && !alive.includes(r.loser) ? [r.loser] : []).map(p => `
+        <div class="reveal-row"><div class="grow"><b>${esc(names(p))}</b></div>
+          <div class="row" style="gap:4px">${(s.dice[p] || []).map(d => peDie(d, 'mini ' + (hit(d) ? 'hit' : (f ? 'dim' : '')))).join('')}</div>
+          ${table && isHost && !s.winner ? `<div class="row" style="gap:4px;margin-inline-start:8px">
+            <button class="btn small secondary" data-adj="${p}" data-d="-1">−</button><span class="pill">${s.count[p]}</span>
+            <button class="btn small secondary" data-adj="${p}" data-d="1">+</button></div>` : ''}
+        </div>`).join('')}
+        ${table && isHost ? '<p class="muted" style="font-size:13px">עדכן כאן מי הפסיד (או הרוויח) קובייה, ואז התחל סיבוב.</p>' : ''}
+      </div>
+      ${isHost && !s.winner ? `${table && s.palifico ? '<label class="stat-row" style="color:#fff;padding:0 16px"><span>הסיבוב הבא פאליפיקו</span><input type="checkbox" id="nextPal"></label>' : ''}
+        <div style="padding:0 16px 16px"><button class="btn block" id="peNext">🎲 סיבוב הבא</button></div>`
+        : s.winner ? '' : '<p class="muted" style="text-align:center;color:#fff">המארח יתחיל את הסיבוב הבא</p>'}`;
+  }
+
+  view.innerHTML = `<div class="table pe">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button>
+      <div class="grow dir">פרודו · סיבוב ${s.round}${table ? ' · סביב השולחן' : ''}</div></div>
+    ${players}<div class="pe-main">${main}</div></div>`;
+
+  const sref = ref(db, `games/${curGid}/state`);
+  const act = fn => runTransaction(sref, st => { if (!st) return st; st = Pe.norm(st); if (fn(st)) return; return st; })
+    .then(r => { if (!r.committed) toast('הפעולה לא התקבלה'); }).catch(() => toast('שגיאת חיבור'));
+  if ($('#myDice')) $('#myDice').onclick = () => { peShow = !peShow; renderPerudo(curGame); };
+  view.querySelectorAll('[data-face]').forEach(b => b.onclick = () => {
+    peFace = +b.dataset.face; peQty = Math.max(1, Pe.minBid(s.bid, peFace, s.palRound)); renderPerudo(curGame);
+  });
+  if ($('#qMinus')) $('#qMinus').onclick = () => { if (peFace && peQty > Math.max(1, Pe.minBid(s.bid, peFace, s.palRound))) { peQty--; renderPerudo(curGame); } };
+  if ($('#qPlus')) $('#qPlus').onclick = () => { if (peFace && peQty < Pe.totalDice(s)) { peQty++; renderPerudo(curGame); } };
+  if ($('#peBid')) $('#peBid').onclick = () => act(st => Pe.bid(st, me.uid, { q: peQty, f: peFace }));
+  if ($('#peDudo')) $('#peDudo').onclick = () => act(st => Pe.challenge(st, me.uid, 'dudo'));
+  if ($('#peCalza')) $('#peCalza').onclick = () => {
+    modal(`<h3>קאלסה על ${s.bid.q} × ${faceTxt(s.bid.f)}?</h3><p class="muted">אם יש בדיוק ${s.bid.q} – תרוויח קובייה. אחרת תפסיד אחת.</p>
+      <button class="btn block" id="cY">קאלסה!</button><button class="btn secondary block" id="cN">ביטול</button>`);
+    $('#cN').onclick = closeModal; $('#cY').onclick = () => { closeModal(); act(st => Pe.challenge(st, me.uid, 'calza')); };
+  };
+  if ($('#peReveal')) $('#peReveal').onclick = () => update(sref, { phase: 'reveal', reveal: null });
+  view.querySelectorAll('[data-adj]').forEach(b => b.onclick = () => act(st => { Pe.adjust(st, b.dataset.adj, +b.dataset.d); }));
+  if ($('#peNext')) $('#peNext').onclick = () => act(st => {
+    if (st.mode === 'table') { Pe.newRound(st, st.turn, $('#nextPal')?.checked); return null; }
+    return Pe.nextRound(st);
+  });
+  $('#exitBtn').onclick = () => {
+    modal(`<h3>לצאת מהמשחק?</h3><p class="muted">${isHost ? 'אתה המארח – יציאה תסגור את המשחק לכולם.' : 'תוכל לחזור מהמסך הראשי.'}</p>
+      ${isHost ? '' : '<button class="btn block" id="xHome">למסך הראשי (המשחק ממשיך)</button>'}
+      <button class="btn danger block" id="xLeave">${isHost ? 'סגור משחק' : 'עזוב'}</button><button class="btn secondary block" id="xNo">ביטול</button>`);
+    $('#xNo').onclick = closeModal; $('#xLeave').onclick = () => { closeModal(); leaveGame(); };
+    if ($('#xHome')) $('#xHome').onclick = () => { closeModal(); go('home'); };
+  };
+  if (s.winner && !$('#modal').dataset.winShown) {
+    $('#modal').dataset.winShown = '1';
+    modal(`<div style="font-size:60px">${s.winner === me.uid ? '🏆' : '🎲'}</div>
+      <h3>${s.winner === me.uid ? 'ניצחת!' : `${esc(names(s.winner))} ניצח!`}</h3>
+      ${isHost ? '<button class="btn block" id="again">🔁 משחק חדש</button>' : '<p class="muted">המארח יכול להתחיל משחק חדש</p>'}
+      <button class="btn secondary block" id="wHome">למסך הראשי</button>`);
+    if (isHost) $('#again').onclick = () => { closeModal(); startPerudo(g); };
+    $('#wHome').onclick = () => { closeModal(); isHost ? leaveGame() : go('home'); };
+  }
+  if (!s.winner) delete $('#modal').dataset.winShown;
+  if (isHost && s.winner && g.status === 'playing') finishTwoPlayer(g, s.winner, s.order);
 }
 
 // ---------- friends ----------

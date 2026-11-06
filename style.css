@@ -301,3 +301,30 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .die.used { opacity: .3; }
 .bg-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0 14px; }
 .ck-player .ch { width: 22px; height: 22px; margin: 0; }
+
+/* ===== Perudo ===== */
+.table.pe { background: radial-gradient(ellipse at center, #8a3b1e, #4a1d0c); }
+.opp.out { opacity: .4; }
+.pe-main { padding: 0 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.pe-card { color: var(--text); margin: 0; }
+.my-dice { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; border: 0; background: rgba(0,0,0,.25); padding: 16px; border-radius: 20px; min-height: 90px; min-width: 260px; color: #fff; font-size: 16px; align-items: center; }
+.my-dice.covered { background: repeating-linear-gradient(45deg, rgba(0,0,0,.35) 0 12px, rgba(0,0,0,.2) 12px 24px); }
+.die.pdie { width: 50px; height: 50px; padding: 6px; border-radius: 10px; }
+.die.pdie.mini { width: 32px; height: 32px; padding: 3px; border-radius: 5px; box-shadow: 0 1px 2px rgba(0,0,0,.4); display: inline-grid; vertical-align: middle; }
+.die.paco { display: grid; place-items: center; background: #ffd84d; color: #b3261e; font-size: 28px; font-weight: 900; }
+.die.paco.mini { font-size: 15px; display: inline-grid; }
+.die.hit { box-shadow: 0 0 0 3px var(--ok), 0 1px 2px rgba(0,0,0,.4); }
+.die.dim { opacity: .35; }
+.cur-bid { font-size: 22px; margin: 4px 0; display: flex; align-items: center; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.faces { display: flex; gap: 6px; justify-content: center; margin-top: 6px; }
+.face-btn { border: 2px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px; }
+.face-btn.on { border-color: var(--accent); background: var(--surface2); box-shadow: 0 0 0 2px var(--accent); }
+.face-btn:disabled { opacity: .3; }
+.qty { font-size: 30px; font-weight: 900; min-width: 50px; text-align: center; }
+.reveal-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.reveal-row:last-of-type { border-bottom: 0; }
+.face-counts { display: flex; gap: 12px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
+.face-counts > div { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 18px; }
+.die.pdie.mini i { margin: 1px; }
+.die.pdie i { margin: 2px; }
+.pe-card .status { background: var(--accent); color: #fff; }
