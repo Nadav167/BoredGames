@@ -10,6 +10,7 @@ import {
 import * as Taki from './games/taki.js';
 import * as Imp from './games/imposter.js';
 import * as Ck from './games/checkers.js';
+import * as Bg from './games/backgammon.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -29,7 +30,7 @@ const GAMES = [
   { id: 'taki', name: 'טאקי', ico: '🃏', ready: true, min: 2, max: 8 },
   { id: 'imposter', name: 'המתחזה', ico: '🕵️', ready: true, min: 3, max: 16, bots: false, table: true },
   { id: 'checkers', name: 'דמקה', ico: '⚫', ready: true, min: 2, max: 2, botLevels: true },
-  { id: 'backgammon', name: 'שש-בש', ico: '🎲' },
+  { id: 'backgammon', name: 'שש-בש', ico: '🎲', ready: true, min: 2, max: 2, oneBot: true },
   { id: 'cheat', name: "צ'יט", ico: '🤥' },
   { id: 'shithead', name: 'שיט-הד', ico: '💩' },
   { id: 'durak', name: 'דוראק', ico: '🂡' },
@@ -297,7 +298,7 @@ function gameMenu(g) {
     <div style="font-size:48px">${g.ico}</div><h3>${esc(g.name)}</h3>
     ${g.table ? '<p class="muted">משחק סביב השולחן: כל אחד מחזיק את הטלפון שלו, והדיבור קורה בקול.</p>' : ''}
     <button class="btn block" id="mFriends">👥 ${g.table ? 'פתח חדר והזמן את החברים' : 'משחק עם חברים'}</button>
-    ${g.botLevels ? `<div style="margin-top:14px" class="muted">או משחק נגד בוט:</div>
+    ${g.oneBot ? `<button class="btn secondary block" data-bots="1" style="margin-top:10px">🤖 משחק נגד בוט</button>` : g.botLevels ? `<div style="margin-top:14px" class="muted">או משחק נגד בוט:</div>
     <div class="row" style="justify-content:center;margin-top:6px">
       ${Object.entries(Ck.LEVELS).map(([k, n]) => `<button class="btn secondary small" data-level="${k}">🤖 ${n}</button>`).join('')}
     </div>` : g.bots === false ? '' : `<div style="margin-top:14px" class="muted">או משחק מהיר נגד בוטים:</div>
@@ -321,7 +322,7 @@ async function createGame(type, bots, level) {
   const g = { type, host: me.uid, status: 'lobby', players, createdAt: Date.now() };
   if (type === 'imposter') g.settings = Imp.DEFAULT_SETTINGS;
   if (type === 'checkers') g.settings = { rules: 'il' };
-  if (bots) { g.status = 'playing'; g.state = type === 'checkers' ? startCheckersState(players, 'il') : Taki.newGame(orderOf(players)); }
+  if (bots) { g.status = 'playing'; g.state = type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -341,6 +342,7 @@ function openGame(gid) {
     if (g.status === 'lobby') renderLobby(g);
     else if (g.type === 'imposter') renderImposter(g);
     else if (g.type === 'checkers') { renderCheckers(g); checkersTick(g); }
+    else if (g.type === 'backgammon') { renderBackgammon(g); bgTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -361,7 +363,7 @@ function renderLobby(g) {
         <div class="grow">${esc(g.players[p].nick)} ${p === g.host ? '<span class="pill">מארח</span>' : ''}</div>
         ${isHost && g.players[p].bot ? `<button class="btn small secondary" data-kick="${p}">הסר</button>` : ''}
       </div>`).join('')}
-      ${isHost && info.bots !== false && !info.botLevels ? `<button class="btn secondary block" id="addBot" style="margin-top:10px">➕ הוסף בוט</button>` : ''}
+      ${isHost && info.bots !== false && !info.botLevels && !info.oneBot ? `<button class="btn secondary block" id="addBot" style="margin-top:10px">➕ הוסף בוט</button>` : ''}
     </div>
     ${g.type === 'imposter' ? imposterSettingsHtml(g, isHost) : ''}
     ${g.type === 'checkers' ? checkersSettingsHtml(g, isHost) : ''}
@@ -390,6 +392,7 @@ function renderLobby(g) {
     };
     $('#startBtn').onclick = () => g.type === 'imposter' ? startImposter(g, g.state?.round || 0)
       : g.type === 'checkers' ? startCheckers(g)
+      : g.type === 'backgammon' ? startBg(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -909,6 +912,191 @@ async function finishTwoPlayer(g, winnerUid, uids) {
     if (p === winnerUid) u[`users/${p}/stats/${g.type}/won`] = increment(1);
   }
   if (Object.keys(u).length) await update(ref(db), u);
+}
+
+// ---------- Backgammon UI ----------
+function startBgState(players) {
+  const ids = orderOf(players).slice(0, 2);
+  if (Math.random() < 0.5) ids.reverse();
+  return { ...Bg.newGame(), colors: { w: ids[0], b: ids[1] } };
+}
+const startBg = (g, swap) => {
+  const st = startBgState(g.players);
+  if (swap && g.state?.colors) st.colors = { w: g.state.colors.b, b: g.state.colors.w };
+  return update(ref(db, `games/${curGid}`), { status: 'playing', state: st });
+};
+
+let bgPending = [], bgSrc = null, bgKey = '', bgSeqCache = { key: '', seqs: [] };
+const DIE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+function dieHtml(n, used) {
+  const spots = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] }[n] || [];
+  return `<div class="die ${used ? 'used' : ''}">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => `<i class="${spots.includes(k) ? 'on' : ''}"></i>`).join('')}</div>`;
+}
+
+function renderBackgammon(g) {
+  view.classList.add('game-mode');
+  const s0 = Bg.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const myColor = s0.colors.w === me.uid ? 'w' : s0.colors.b === me.uid ? 'b' : '';
+  const V = myColor || 'w', O = V === 'w' ? 'b' : 'w';
+  const myTurn = !s0.winner && s0.turn === myColor;
+  const key = JSON.stringify([s0.pts, s0.bar, s0.dice, s0.turn]);
+  if (bgKey !== key) { bgPending = []; bgSrc = null; bgKey = key; }
+  let seqs = [];
+  if (myTurn && s0.dice.length) {
+    if (bgSeqCache.key !== key) bgSeqCache = { key, seqs: Bg.sequences(s0) };
+    seqs = bgSeqCache.seqs;
+  }
+  const noMoves = myTurn && s0.dice.length && (!seqs.length || !seqs[0].length);
+  // working position = server state + my pending steps
+  const s = Bg.norm(structuredClone(g.state));
+  for (const st of bgPending) Bg.applyStep(s, { ...st });
+  const fits = seqs.filter(q => bgPending.every((x, i) => q[i] && Bg.sameStep(x, q[i])));
+  const nextSteps = []; for (const q of fits) { const n = q[bgPending.length]; if (n && !nextSteps.some(x => Bg.sameStep(x, n))) nextSteps.push(n); }
+  const sources = new Set(nextSteps.map(x => String(x.from)));
+  const targets = bgSrc != null ? nextSteps.filter(x => String(x.from) === String(bgSrc)) : [];
+  const targetSet = new Set(targets.map(x => String(x.to)));
+  const lastTo = new Set((s0.last || '').split(',').filter(Boolean).map(x => x.split('>')[1]));
+
+  const checkers = (n, color, top) => {
+    const k = Math.min(n, 5);
+    return `<div class="stack ${top ? 'top' : 'bot'}">${Array.from({ length: k }, (_, j) =>
+      `<span class="ch ${color}">${j === k - 1 && n > 5 ? n : ''}</span>`).join('')}</div>`;
+  };
+  const pointCell = (i, top) => {
+    const v = s.pts[i], n = Math.abs(v), color = v > 0 ? 'w' : 'b';
+    const cls = ['pt', top ? 'top' : 'bot', (i % 2) ? 'odd' : 'even',
+      sources.has(String(i)) && bgSrc == null ? 'can' : '', String(bgSrc) === String(i) ? 'sel' : '',
+      targetSet.has(String(i)) ? 'target' : '', lastTo.has(String(i)) ? 'last' : ''].join(' ');
+    return `<div class="${cls}" data-pt="${i}"><div class="tri"></div>${n ? checkers(n, color, top) : ''}</div>`;
+  };
+  const barCell = (color, top) => `<div class="barcell ${top ? 'top' : 'bot'} ${color === V && sources.has('bar') && bgSrc == null ? 'can' : ''} ${color === V && bgSrc === 'bar' ? 'sel' : ''}" ${color === V ? 'data-pt="bar"' : ''}>
+      ${s.bar[color] ? checkers(s.bar[color], color, top) : ''}</div>`;
+  const topIdx = V === 'w' ? [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23] : [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
+  const botIdx = V === 'w' ? [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0] : [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+  const row = (idx, top) => idx.slice(0, 6).map(i => pointCell(i, top)).join('') + barCell(top ? O : V, top) + idx.slice(6).map(i => pointCell(i, top)).join('');
+
+  const usedCount = bgPending.length;
+  const diceShown = s0.rolled ? (s0.rolled[0] === s0.rolled[1] ? [s0.rolled[0], s0.rolled[0], s0.rolled[0], s0.rolled[0]] : [...s0.rolled]) : [];
+  const remaining = [...s.dice];
+  const diceHtml = diceShown.map(d => { const k = remaining.indexOf(d); if (k >= 0) { remaining.splice(k, 1); return dieHtml(d, false); } return dieHtml(d, true); }).join('');
+
+  let status, action = '';
+  if (s0.winner) status = s0.winner === myColor ? `🏆 ניצחת!${s0.mars ? ' מרס!' : ''}` : `🏆 ${esc(names(s0.colors[s0.winner]))} ניצח${s0.mars ? ' (מרס)' : ''}`;
+  else if (myTurn && !s0.dice.length) { status = '<b>התור שלך</b>'; action = '<button class="btn" id="rollBtn">🎲 הטל קוביות</button>'; }
+  else if (noMoves) { status = 'אין לך מהלכים חוקיים'; action = '<button class="btn" id="passBtn">העבר תור</button>'; }
+  else if (myTurn) { status = bgSrc == null ? 'בחר כלי להזיז' : 'בחר לאן'; if (bgPending.length) action = '<button class="btn small secondary" id="undoBtn">↩️ בטל</button>'; }
+  else status = `התור של ${esc(names(s0.colors[s0.turn]))}…`;
+
+  const tray = color => `<div class="tray ${color === V && targetSet.has('off') ? 'target' : ''}" ${color === V ? 'data-pt="off"' : ''}>
+      <div class="ch ${color}"></div><b>${s.off[color]}</b></div>`;
+  view.innerHTML = `
+    <div class="table bg">
+      <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button>
+        <div class="grow dir">פיפס: אתה ${Bg.pips(s, V)} · יריב ${Bg.pips(s, O)}</div>
+        ${!s0.winner && myColor ? '<button class="btn small" id="resignBtn">🏳️</button>' : ''}</div>
+      <div class="ck-player ${s0.turn === O && !s0.winner ? 'turn' : ''}"><span class="ch ${O}"></span><b>${esc(names(s0.colors[O]))}</b></div>
+      <div class="bg-wrap">
+        <div class="bg-board">
+          <div class="bg-row">${row(topIdx, true)}</div>
+          <div class="bg-mid"><div class="dice">${diceHtml}</div></div>
+          <div class="bg-row">${row(botIdx, false)}</div>
+        </div>
+        <div class="trays">${tray(O)}<div class="grow"></div>${tray(V)}</div>
+      </div>
+      <div class="ck-player ${s0.turn === V && !s0.winner ? 'turn' : ''}"><span class="ch ${V}"></span><b>${esc(names(s0.colors[V]))}</b></div>
+      <div class="bg-actions"><div class="status">${status}</div>${action}</div>
+    </div>`;
+
+  view.querySelectorAll('[data-pt]').forEach(el => el.onclick = () => {
+    if (!myTurn || !s0.dice.length) return;
+    const id = el.dataset.pt;
+    if (bgSrc != null && targetSet.has(id)) {
+      const step = targets.filter(x => String(x.to) === id).sort((a, b) => a.die - b.die)[0];
+      bgPending = [...bgPending, step]; bgSrc = null;
+      const rest = seqs.filter(q => bgPending.every((x, i) => q[i] && Bg.sameStep(x, q[i])));
+      if (rest.length && rest.every(q => q.length === bgPending.length)) { const steps = bgPending; bgSubmit(steps); return; }
+      // auto-select if only one checker can move next
+      const nx = new Set(); for (const q of rest) if (q[bgPending.length]) nx.add(String(q[bgPending.length].from));
+      if (nx.size === 1) bgSrc = [...nx][0] === 'bar' ? 'bar' : +[...nx][0];
+    } else if (sources.has(id)) bgSrc = bgSrc != null && String(bgSrc) === id ? null : (id === 'bar' ? 'bar' : +id);
+    else bgSrc = null;
+    renderBackgammon(curGame);
+  });
+  if ($('#rollBtn')) $('#rollBtn').onclick = () => runTransaction(ref(db, `games/${curGid}/state`), st => {
+    if (!st) return st; st = Bg.norm(st);
+    if (st.turn !== myColor || st.dice.length || st.winner) return;
+    return Bg.roll(st);
+  });
+  if ($('#passBtn')) $('#passBtn').onclick = () => runTransaction(ref(db, `games/${curGid}/state`), st => {
+    if (!st) return st; st = Bg.norm(st);
+    if (st.turn !== myColor) return;
+    const q = Bg.sequences(st); if (q.length && q[0].length) return;
+    Bg.endTurn(st); st.last = ''; return st;
+  });
+  if ($('#undoBtn')) $('#undoBtn').onclick = () => { bgPending = []; bgSrc = null; renderBackgammon(curGame); };
+  // auto-select when there is only one checker that can move
+  if (myTurn && bgSrc == null && sources.size === 1 && !bgPending.length) { const only = [...sources][0]; bgSrc = only === 'bar' ? 'bar' : +only; renderBackgammon(curGame); return; }
+
+  $('#exitBtn').onclick = () => {
+    modal(`<h3>לצאת מהמשחק?</h3><p class="muted">${isHost ? 'אתה המארח – יציאה תסגור את המשחק.' : 'תוכל לחזור מהמסך הראשי.'}</p>
+      ${isHost ? '' : '<button class="btn block" id="xHome">למסך הראשי (המשחק ממשיך)</button>'}
+      <button class="btn danger block" id="xLeave">${isHost ? 'סגור משחק' : 'עזוב'}</button><button class="btn secondary block" id="xNo">ביטול</button>`);
+    $('#xNo').onclick = closeModal; $('#xLeave').onclick = () => { closeModal(); leaveGame(); };
+    if ($('#xHome')) $('#xHome').onclick = () => { closeModal(); go('home'); };
+  };
+  if ($('#resignBtn')) $('#resignBtn').onclick = () => {
+    modal(`<h3>לפרוש מהמשחק?</h3><p class="muted">היריב ינצח.</p>
+      <button class="btn danger block" id="rY">פרוש</button><button class="btn secondary block" id="rN">ביטול</button>`);
+    $('#rN').onclick = closeModal;
+    $('#rY').onclick = () => { closeModal(); update(ref(db, `games/${curGid}/state`), { winner: O }); };
+  };
+  if (s0.winner && !$('#modal').dataset.winShown) {
+    $('#modal').dataset.winShown = '1';
+    modal(`<div style="font-size:60px">${s0.winner === myColor ? '🏆' : '😅'}</div><h3>${status}</h3>
+      ${isHost ? '<button class="btn block" id="again">🔁 משחק חוזר (מחליפים צבעים)</button>' : '<p class="muted">המארח יכול להתחיל משחק חוזר</p>'}
+      <button class="btn secondary block" id="wHome">למסך הראשי</button>`);
+    if (isHost) $('#again').onclick = () => { closeModal(); startBg(g, true); };
+    $('#wHome').onclick = () => { closeModal(); isHost ? leaveGame() : go('home'); };
+  }
+  if (!s0.winner) delete $('#modal').dataset.winShown;
+}
+
+async function bgSubmit(steps) {
+  try {
+    const r = await runTransaction(ref(db, `games/${curGid}/state`), st => {
+      if (!st) return st; st = Bg.norm(st);
+      if (Bg.play(st, steps)) return;
+      return st;
+    });
+    if (!r.committed) { toast('המהלך לא התקבל'); bgPending = []; renderBackgammon(curGame); }
+  } catch { toast('שגיאת חיבור'); }
+}
+
+let bgBotBusy = false;
+function bgTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Bg.norm(structuredClone(g.state));
+  if (s.winner) { finishTwoPlayer(g, s.colors[s.winner], Object.values(s.colors)); return; }
+  const cur = s.colors[s.turn];
+  if (!g.players[cur]?.bot || bgBotBusy) return;
+  bgBotBusy = true;
+  const gid = curGid, before = JSON.stringify([s.pts, s.bar, s.dice, s.turn]);
+  setTimeout(async () => {
+    try {
+      if (curGid !== gid) return;
+      await runTransaction(ref(db, `games/${gid}/state`), st => {
+        if (!st) return st; st = Bg.norm(st);
+        if (JSON.stringify([st.pts, st.bar, st.dice, st.turn]) !== before) return;
+        if (!st.dice.length) return Bg.roll(st);
+        const steps = Bg.botSteps(st);
+        if (!steps.length) { Bg.endTurn(st); st.last = ''; return st; }
+        if (Bg.play(st, steps)) return;
+        return st;
+      });
+    } catch {}
+    finally { bgBotBusy = false; if (curGid === gid && curGame) bgTick(curGame); }
+  }, s.dice.length ? 1300 : 700);
 }
 
 // ---------- friends ----------

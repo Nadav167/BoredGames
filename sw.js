@@ -1,6 +1,6 @@
 // BoredGames service worker: network-first for app files, cache fallback when offline
-const CACHE = 'boredgames-v6';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'games/taki.js', 'games/imposter.js', 'games/checkers.js', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'boredgames-v7';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'games/taki.js', 'games/imposter.js', 'games/checkers.js', 'games/backgammon.js', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))));
