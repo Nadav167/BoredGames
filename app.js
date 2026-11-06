@@ -9,6 +9,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import * as Taki from './games/taki.js';
 import * as Imp from './games/imposter.js';
+import * as Ck from './games/checkers.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -27,7 +28,7 @@ const db = getDatabase(fbApp);
 const GAMES = [
   { id: 'taki', name: 'טאקי', ico: '🃏', ready: true, min: 2, max: 8 },
   { id: 'imposter', name: 'המתחזה', ico: '🕵️', ready: true, min: 3, max: 16, bots: false, table: true },
-  { id: 'checkers', name: 'דמקה', ico: '⚫' },
+  { id: 'checkers', name: 'דמקה', ico: '⚫', ready: true, min: 2, max: 2, botLevels: true },
   { id: 'backgammon', name: 'שש-בש', ico: '🎲' },
   { id: 'cheat', name: "צ'יט", ico: '🤥' },
   { id: 'shithead', name: 'שיט-הד', ico: '💩' },
@@ -296,7 +297,10 @@ function gameMenu(g) {
     <div style="font-size:48px">${g.ico}</div><h3>${esc(g.name)}</h3>
     ${g.table ? '<p class="muted">משחק סביב השולחן: כל אחד מחזיק את הטלפון שלו, והדיבור קורה בקול.</p>' : ''}
     <button class="btn block" id="mFriends">👥 ${g.table ? 'פתח חדר והזמן את החברים' : 'משחק עם חברים'}</button>
-    ${g.bots === false ? '' : `<div style="margin-top:14px" class="muted">או משחק מהיר נגד בוטים:</div>
+    ${g.botLevels ? `<div style="margin-top:14px" class="muted">או משחק נגד בוט:</div>
+    <div class="row" style="justify-content:center;margin-top:6px">
+      ${Object.entries(Ck.LEVELS).map(([k, n]) => `<button class="btn secondary small" data-level="${k}">🤖 ${n}</button>`).join('')}
+    </div>` : g.bots === false ? '' : `<div style="margin-top:14px" class="muted">או משחק מהיר נגד בוטים:</div>
     <div class="row" style="justify-content:center;margin-top:6px">
       ${[1, 2, 3, 4, 5].map(n => `<button class="btn secondary small" data-bots="${n}">${n} 🤖</button>`).join('')}
     </div>`}
@@ -304,18 +308,20 @@ function gameMenu(g) {
   $('#mClose').onclick = closeModal;
   $('#mFriends').onclick = () => { closeModal(); createGame(g.id, 0); };
   document.querySelectorAll('[data-bots]').forEach(b => b.onclick = () => { closeModal(); createGame(g.id, +b.dataset.bots); });
+  document.querySelectorAll('[data-level]').forEach(b => b.onclick = () => { closeModal(); createGame(g.id, 1, b.dataset.level); });
 }
 
 const BOT_NAMES = ['רובי', 'ביפ', 'צ׳יפ', 'בוטי', 'מקס', 'נובה', 'זיגי'];
 function botEntry(i) { return [`bot_${Date.now().toString(36)}_${i}`, { nick: `🤖 ${BOT_NAMES[i % BOT_NAMES.length]}`, bot: true, at: Date.now() + i + 1 }]; }
 
-async function createGame(type, bots) {
+async function createGame(type, bots, level) {
   const gref = push(ref(db, 'games'));
   const players = { [me.uid]: { nick: me.nick, at: Date.now() } };
-  for (let i = 0; i < bots; i++) { const [id, v] = botEntry(i); players[id] = v; }
+  for (let i = 0; i < bots; i++) { const [id, v] = botEntry(i); if (level) { v.level = level; v.nick = `🤖 בוט ${Ck.LEVELS[level]}`; } players[id] = v; }
   const g = { type, host: me.uid, status: 'lobby', players, createdAt: Date.now() };
   if (type === 'imposter') g.settings = Imp.DEFAULT_SETTINGS;
-  if (bots) { g.status = 'playing'; g.state = Taki.newGame(orderOf(players)); }
+  if (type === 'checkers') g.settings = { rules: 'il' };
+  if (bots) { g.status = 'playing'; g.state = type === 'checkers' ? startCheckersState(players, 'il') : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -334,6 +340,7 @@ function openGame(gid) {
     curGame = g;
     if (g.status === 'lobby') renderLobby(g);
     else if (g.type === 'imposter') renderImposter(g);
+    else if (g.type === 'checkers') { renderCheckers(g); checkersTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -354,9 +361,10 @@ function renderLobby(g) {
         <div class="grow">${esc(g.players[p].nick)} ${p === g.host ? '<span class="pill">מארח</span>' : ''}</div>
         ${isHost && g.players[p].bot ? `<button class="btn small secondary" data-kick="${p}">הסר</button>` : ''}
       </div>`).join('')}
-      ${isHost && info.bots !== false ? `<button class="btn secondary block" id="addBot" style="margin-top:10px">➕ הוסף בוט</button>` : ''}
+      ${isHost && info.bots !== false && !info.botLevels ? `<button class="btn secondary block" id="addBot" style="margin-top:10px">➕ הוסף בוט</button>` : ''}
     </div>
     ${g.type === 'imposter' ? imposterSettingsHtml(g, isHost) : ''}
+    ${g.type === 'checkers' ? checkersSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -373,6 +381,7 @@ function renderLobby(g) {
   view.querySelectorAll('[data-kick]').forEach(b => b.onclick = () => remove(ref(db, `games/${curGid}/players/${b.dataset.kick}`)));
   if (isHost) {
     if (g.type === 'imposter') bindImposterSettings(g);
+    if (g.type === 'checkers') bindCheckersSettings();
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -380,6 +389,7 @@ function renderLobby(g) {
       set(ref(db, `games/${curGid}/players/${id}`), v);
     };
     $('#startBtn').onclick = () => g.type === 'imposter' ? startImposter(g, g.state?.round || 0)
+      : g.type === 'checkers' ? startCheckers(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -734,6 +744,171 @@ async function decideImposter(g, winner) {
     if ((winner === 'imp') === !!s.imposters?.[p]) u[`users/${p}/stats/imposter/won`] = increment(1);
   }
   await update(ref(db), u);
+}
+
+// ---------- Checkers UI ----------
+function startCheckersState(players, rules) {
+  const ids = orderOf(players).slice(0, 2);
+  if (Math.random() < 0.5) ids.reverse();
+  return { ...Ck.newGame(rules || 'il'), colors: { w: ids[0], b: ids[1] } };
+}
+const startCheckers = (g, swap) => {
+  let st = startCheckersState(g.players, g.settings?.rules);
+  if (swap && g.state?.colors) st.colors = { w: g.state.colors.b, b: g.state.colors.w };
+  return update(ref(db, `games/${curGid}`), { status: 'playing', state: st });
+};
+
+function checkersSettingsHtml(g, isHost) {
+  const r = g.settings?.rules || 'il';
+  if (!isHost) return `<div class="card"><div class="muted">חוקים</div><p><b>${Ck.RULES[r]}</b><br><span class="muted">${Ck.RULES_INFO[r]}</span></p></div>`;
+  return `<div class="card"><div class="muted" style="margin-bottom:8px">חוקים</div>
+    <div class="chips">${Object.entries(Ck.RULES).map(([k, n]) => `<button class="chip ${r === k ? 'on' : ''}" data-rules="${k}">${n}</button>`).join('')}</div>
+    <div class="muted" style="font-size:14px">${Ck.RULES_INFO[r]}</div></div>`;
+}
+function bindCheckersSettings() {
+  view.querySelectorAll('[data-rules]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { rules: b.dataset.rules }));
+}
+
+let ckSel = [], ckKey = '';
+function renderCheckers(g) {
+  view.classList.add('game-mode');
+  const s = g.state, isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const myColor = s.colors.w === me.uid ? 'w' : s.colors.b === me.uid ? 'b' : '';
+  const oppColor = myColor === 'b' ? 'w' : 'b';
+  const myTurn = !s.winner && s.turn === myColor;
+  if (ckKey !== s.board + s.turn) { ckSel = []; ckKey = s.board + s.turn; }
+  const moves = myTurn ? Ck.legalMoves(s) : [];
+  const fits = moves.filter(m => ckSel.every((x, i) => m.path[i] === x));
+  const starts = new Set(moves.map(m => m.path[0]));
+  const targets = new Set(ckSel.length ? fits.filter(m => m.path.length > ckSel.length).map(m => m.path[ckSel.length]) : []);
+  const last = s.last ? s.last.split(',').map(Number) : [];
+  const flip = myColor === 'b';
+  const mustCap = moves.length && moves[0].taken.length;
+  // mid-jump: show the piece on its current square and fade the pieces already jumped
+  let board = s.board, fading = [];
+  if (ckSel.length > 1 && fits.length) {
+    const b = board.split(''); const pc = b[ckSel[0]]; b[ckSel[0]] = '.'; b[ckSel[ckSel.length - 1]] = pc;
+    board = b.join(''); fading = fits[0].taken.slice(0, ckSel.length - 1);
+  }
+
+  let cells = '';
+  for (let k = 0; k < 64; k++) {
+    const i = flip ? 63 - k : k, r = i >> 3, c = i & 7, dark = (r + c) % 2 === 1;
+    const p = board[i];
+    const cls = ['sq', dark ? 'dark' : 'light', fading.includes(i) ? 'fade' : '',
+      last.includes(i) ? 'last' : '', ckSel.includes(i) ? 'sel' : '',
+      !ckSel.length && starts.has(i) ? 'can' : '', targets.has(i) ? 'target' : ''].join(' ');
+    const piece = p === '.' ? '' : `<div class="pc ${p.toLowerCase() === 'w' ? 'pw' : 'pb'} ${p === 'W' || p === 'B' ? 'king' : ''}">${p === 'W' || p === 'B' ? '♛' : ''}</div>`;
+    cells += `<div class="${cls}" data-sq="${i}">${piece}</div>`;
+  }
+  const lost = t => 12 - Ck.count(s.board, t);
+  const who = t => `<div class="ck-player ${s.turn === t && !s.winner ? 'turn' : ''}">
+      <div class="pc mini ${t === 'w' ? 'pw' : 'pb'}"></div><b>${esc(names(s.colors[t]))}</b>
+      <span class="muted">אכל ${lost(t === 'w' ? 'b' : 'w')}</span></div>`;
+  let status;
+  if (s.winner === 'draw') status = '🤝 תיקו';
+  else if (s.winner) status = s.winner === myColor ? '🏆 ניצחת!' : `🏆 ${esc(names(s.colors[s.winner]))} ניצח`;
+  else if (myTurn) status = mustCap ? '<b>התור שלך</b> · חובה לאכול!' : '<b>התור שלך</b>';
+  else status = `התור של ${esc(names(s.colors[s.turn]))}…`;
+
+  view.innerHTML = `
+    <div class="table ck">
+      <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button>
+        <div class="grow dir">${Ck.RULES[s.rules]}</div>
+        ${!s.winner && myColor ? '<button class="btn small" id="resignBtn">🏳️ פרישה</button>' : ''}</div>
+      ${who(oppColor)}
+      <div class="board-wrap"><div class="board">${cells}</div></div>
+      ${who(myColor || 'w')}
+      <div class="status" style="margin:6px auto 12px">${status}</div>
+    </div>`;
+
+  view.querySelectorAll('[data-sq]').forEach(el => el.onclick = () => {
+    if (!myTurn) return;
+    const i = +el.dataset.sq;
+    if (targets.has(i)) {
+      ckSel = [...ckSel, i];
+      const done = moves.find(m => Ck.samePath(m.path, ckSel));
+      const longer = moves.some(m => m.path.length > ckSel.length && ckSel.every((x, j) => m.path[j] === x));
+      if (done && !longer) { const path = ckSel; ckSel = []; ckAct(path); return; }
+    } else if (starts.has(i)) {
+      ckSel = ckSel[0] === i ? [] : [i];
+      const only = moves.filter(m => m.path[0] === i);
+      if (!only.length) ckSel = [];
+    } else if (mustCap && owner2(s.board[i]) === myColor) { toast('חובה לאכול!'); return; }
+    else ckSel = [];
+    renderCheckers(curGame);
+  });
+  $('#exitBtn').onclick = () => {
+    modal(`<h3>לצאת מהמשחק?</h3><p class="muted">${isHost ? 'אתה המארח – יציאה תסגור את המשחק.' : 'תוכל לחזור מהמסך הראשי.'}</p>
+      ${isHost ? '' : '<button class="btn block" id="xHome">למסך הראשי (המשחק ממשיך)</button>'}
+      <button class="btn danger block" id="xLeave">${isHost ? 'סגור משחק' : 'עזוב'}</button><button class="btn secondary block" id="xNo">ביטול</button>`);
+    $('#xNo').onclick = closeModal; $('#xLeave').onclick = () => { closeModal(); leaveGame(); };
+    if ($('#xHome')) $('#xHome').onclick = () => { closeModal(); go('home'); };
+  };
+  if ($('#resignBtn')) $('#resignBtn').onclick = () => {
+    modal(`<h3>לפרוש מהמשחק?</h3><p class="muted">היריב ינצח.</p>
+      <button class="btn danger block" id="rY">פרוש</button><button class="btn secondary block" id="rN">ביטול</button>`);
+    $('#rN').onclick = closeModal;
+    $('#rY').onclick = () => { closeModal(); update(ref(db, `games/${curGid}/state`), { winner: oppColor }); };
+  };
+  if (s.winner && !$('#modal').dataset.winShown) {
+    $('#modal').dataset.winShown = '1';
+    modal(`<div style="font-size:60px">${s.winner === 'draw' ? '🤝' : s.winner === myColor ? '🏆' : '😅'}</div>
+      <h3>${status}</h3>
+      ${isHost ? '<button class="btn block" id="again">🔁 משחק חוזר (מחליפים צבעים)</button>' : '<p class="muted">המארח יכול להתחיל משחק חוזר</p>'}
+      <button class="btn secondary block" id="wHome">למסך הראשי</button>`);
+    if (isHost) $('#again').onclick = () => { closeModal(); startCheckers(g, true); };
+    $('#wHome').onclick = () => { closeModal(); isHost ? leaveGame() : go('home'); };
+  }
+  if (!s.winner) delete $('#modal').dataset.winShown;
+}
+const owner2 = p => (p === 'w' || p === 'W') ? 'w' : (p === 'b' || p === 'B') ? 'b' : '';
+
+async function ckAct(path) {
+  try {
+    const r = await runTransaction(ref(db, `games/${curGid}/state`), st => {
+      if (!st) return st;
+      if (Ck.play(st, path)) return;
+      return st;
+    });
+    if (!r.committed) toast('המהלך לא התקבל');
+  } catch { toast('שגיאת חיבור'); }
+}
+
+let ckBotBusy = false;
+function checkersTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = g.state;
+  if (s.winner) { finishTwoPlayer(g, s.winner === 'draw' ? '' : s.colors[s.winner], Object.values(s.colors)); return; }
+  const cur = s.colors[s.turn];
+  if (!g.players[cur]?.bot || ckBotBusy) return;
+  ckBotBusy = true;
+  const gid = curGid, before = s.board + s.turn;
+  setTimeout(async () => {
+    try {
+      if (curGid !== gid) return;
+      const m = Ck.botMove({ ...s }, g.players[cur].level || 'medium');
+      if (m) await runTransaction(ref(db, `games/${gid}/state`), st => {
+        if (!st || st.board + st.turn !== before) return;
+        if (Ck.play(st, m.path)) return;
+        return st;
+      });
+    } catch {}
+    finally { ckBotBusy = false; if (curGid === gid && curGame) checkersTick(curGame); }
+  }, 500);
+}
+
+async function finishTwoPlayer(g, winnerUid, uids) {
+  const r = await runTransaction(ref(db, `games/${curGid}/status`), st => st === 'playing' ? 'done' : undefined);
+  if (!r.committed) return;
+  const u = {};
+  for (const p of uids) {
+    if (!g.players[p] || g.players[p].bot) continue;
+    u[`users/${p}/stats/${g.type}/played`] = increment(1);
+    if (p === winnerUid) u[`users/${p}/stats/${g.type}/won`] = increment(1);
+  }
+  if (Object.keys(u).length) await update(ref(db), u);
 }
 
 // ---------- friends ----------
