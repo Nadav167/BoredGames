@@ -12,6 +12,7 @@ import * as Imp from './games/imposter.js';
 import * as Ck from './games/checkers.js';
 import * as Bg from './games/backgammon.js';
 import * as Pe from './games/perudo.js';
+import * as Ch from './games/cheat.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -32,7 +33,7 @@ const GAMES = [
   { id: 'imposter', name: 'המתחזה', ico: '🕵️', ready: true, min: 3, max: 16, bots: false, table: true },
   { id: 'checkers', name: 'דמקה', ico: '⚫', ready: true, min: 2, max: 2, botLevels: true },
   { id: 'backgammon', name: 'שש-בש', ico: '🎲', ready: true, min: 2, max: 2, oneBot: true },
-  { id: 'cheat', name: "צ'יט", ico: '🤥' },
+  { id: 'cheat', name: "צ'יט", ico: '🤥', ready: true, min: 2, max: 10 },
   { id: 'shithead', name: 'שיט-הד', ico: '💩' },
   { id: 'durak', name: 'דוראק', ico: '🂡' },
   { id: 'eight', name: 'שמונה וחצי', ico: '8½' },
@@ -324,7 +325,9 @@ async function createGame(type, bots, level) {
   if (type === 'imposter') g.settings = Imp.DEFAULT_SETTINGS;
   if (type === 'checkers') g.settings = { rules: 'il' };
   if (type === 'perudo') g.settings = Pe.DEFAULT_SETTINGS;
-  if (bots) { g.status = 'playing'; g.state = type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players) : Taki.newGame(orderOf(players)); }
+  if (type === 'cheat') g.settings = { rule: 'seq' };
+  if (bots) { g.status = 'playing'; g.state = type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
+    : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -346,6 +349,7 @@ function openGame(gid) {
     else if (g.type === 'checkers') { renderCheckers(g); checkersTick(g); }
     else if (g.type === 'backgammon') { renderBackgammon(g); bgTick(g); }
     else if (g.type === 'perudo') renderPerudo(g);
+    else if (g.type === 'cheat') { renderCheat(g); cheatTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -371,6 +375,7 @@ function renderLobby(g) {
     ${g.type === 'imposter' ? imposterSettingsHtml(g, isHost) : ''}
     ${g.type === 'checkers' ? checkersSettingsHtml(g, isHost) : ''}
     ${g.type === 'perudo' ? perudoSettingsHtml(g, isHost) : ''}
+    ${g.type === 'cheat' ? cheatSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -389,6 +394,7 @@ function renderLobby(g) {
     if (g.type === 'imposter') bindImposterSettings(g);
     if (g.type === 'checkers') bindCheckersSettings();
     if (g.type === 'perudo') bindPerudoSettings(g);
+    if (g.type === 'cheat') bindCheatSettings();
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -399,6 +405,7 @@ function renderLobby(g) {
       : g.type === 'checkers' ? startCheckers(g)
       : g.type === 'backgammon' ? startBg(g)
       : g.type === 'perudo' ? startPerudo(g)
+      : g.type === 'cheat' ? startCheat(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -1256,6 +1263,151 @@ function renderPerudo(g) {
   }
   if (!s.winner) delete $('#modal').dataset.winShown;
   if (isHost && s.winner && g.status === 'playing') finishTwoPlayer(g, s.winner, s.order);
+}
+
+// ---------- Cheat UI ----------
+function pcardHtml(c, extra = '', attrs = '') {
+  const red = c.s === '♥' || c.s === '♦', R = Ch.RANKS[c.r];
+  return `<div class="tk pcard ${red ? 'red' : 'blk'} ${extra}" ${attrs}>
+    <span class="ix ix1">${R}<br>${c.s}</span><div class="face"><span class="suit">${c.s}</span><span class="rk">${R}</span></div><span class="ix ix2">${R}<br>${c.s}</span></div>`;
+}
+function cheatSettingsHtml(g, isHost) {
+  const r = g.settings?.rule || 'seq';
+  if (!isHost) return `<div class="card"><div class="muted">חוקים</div><p><b>${Ch.RULES[r]}</b><br><span class="muted">${Ch.RULES_INFO[r]}</span></p></div>`;
+  return `<div class="card"><div class="muted" style="margin-bottom:8px">חוקים</div>
+    <div class="chips">${Object.entries(Ch.RULES).map(([k, n]) => `<button class="chip ${r === k ? 'on' : ''}" data-chrule="${k}">${n}</button>`).join('')}</div>
+    <div class="muted" style="font-size:14px">${Ch.RULES_INFO[r]}</div></div>`;
+}
+function bindCheatSettings() {
+  view.querySelectorAll('[data-chrule]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { rule: b.dataset.chrule }));
+}
+const startCheat = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Ch.newGame(orderOf(g.players), g.settings?.rule || 'seq') });
+
+let chSel = [], chClaim = 0, chKey = '';
+function renderCheat(g) {
+  view.classList.add('game-mode');
+  const s = Ch.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const hand = [...(s.hands[me.uid] || [])].sort((a, b) => a.r - b.r || a.s.localeCompare(b.s));
+  const myTurn = !s.winner && s.turn === me.uid;
+  const key = s.turn + ':' + s.pile.length + ':' + hand.length;
+  if (chKey !== key) { chKey = key; chSel = chSel.filter(id => hand.some(c => c.id === id)); if (!myTurn) chClaim = 0; }
+  const pick = Ch.mustPickRank(s);
+  const claim = pick ? chClaim : s.rank;
+  const others = (() => { const i = s.order.indexOf(me.uid); return [...s.order.slice(i + 1), ...s.order.slice(0, i)]; })();
+  const R = r => Ch.RANKS[r];
+
+  let info;
+  if (s.winner) info = `🏆 <b>${esc(names(s.winner))}</b> ניצח!`;
+  else if (pick) info = `${s.turn === me.uid ? 'אתה פותח' : esc(names(s.turn)) + ' פותח'} ערימה חדשה ובוחר דרגה`;
+  else info = `הדרגה עכשיו: <b class="rank-big">${R(s.rank)}</b>`;
+  let lastTxt = '';
+  if (s.last && !s.last.called) lastTxt = `${esc(names(s.last.by))} שם <b>${s.last.n}</b> ${s.last.n === 1 ? 'קלף' : 'קלפים'} כ-<b>${R(s.last.claim)}</b>${s.pendingWin === s.last.by ? ' · זה הקלף האחרון שלו!' : ''}`;
+  let revealHtml = '';
+  if (s.reveal?.burned) revealHtml = `<div class="reveal-box">🔥 כולם אמרו פס – הערימה נזרקה</div>`;
+  else if (s.reveal) revealHtml = `<div class="reveal-box ${s.reveal.liar ? 'lie' : 'truth'}">
+      <div>${esc(names(s.reveal.caller))} קרא צ'יט על ${esc(names(s.reveal.by))}</div>
+      <div class="rev-cards">${s.reveal.cards.map(c => pcardHtml(c, 'mini-card')).join('')}</div>
+      <b>${s.reveal.liar ? 'שקר! 🤥' : 'אמת! 😇'} ${esc(names(s.reveal.picker))} לוקח את הערימה</b></div>`;
+
+  view.innerHTML = `
+    <div class="table cheat-t">
+      <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button>
+        <div class="grow dir">צ'יט · ${Ch.RULES[s.rule]}</div></div>
+      <div class="opps">${others.map(p => `
+        <div class="opp ${s.turn === p && !s.winner ? 'turn' : ''}">
+          <div class="n">${esc(names(p))}</div>
+          <div class="mini-cards">${'<span></span>'.repeat(Math.min(s.hands[p].length, 12))}</div>
+          <div class="c">${s.hands[p].length} קלפים</div></div>`).join('')}</div>
+      <div class="center">
+        <div class="piles">
+          <div class="pile-stack">${s.pile.length ? cardBack('', `<b>BG</b><span>${s.pile.length}</span>`) : '<div class="empty-pile">ערימה ריקה</div>'}</div>
+        </div>
+        <div class="status">${info}</div>
+        ${lastTxt ? `<div class="dir" style="font-size:15px">${lastTxt}</div>` : ''}
+        ${revealHtml}
+        ${Ch.canCall(s, me.uid) ? `<button class="btn cheat-btn" id="callBtn">צ'יט! 🤥</button>` : ''}
+      </div>
+      <div class="hand-wrap">
+        ${myTurn ? `<div class="ch-actions">
+          ${pick ? `<div class="rank-pick">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(r => `<button class="chip ${chClaim === r ? 'on' : ''}" data-claim="${r}">${R(r)}</button>`).join('')}</div>` : ''}
+          <div class="row" style="justify-content:center">
+            <button class="btn" id="playBtn" ${chSel.length && claim ? '' : 'disabled'}>${chSel.length ? `שים ${chSel.length} כ-${claim ? R(claim) : '?'}` : 'בחר 1–4 קלפים'}</button>
+            ${s.rule === 'free' && s.pile.length ? '<button class="btn secondary" id="passBtn">פס</button>' : ''}
+          </div></div>` : `<div class="hand-title">${s.winner ? '' : `התור של ${esc(names(s.turn))}`}</div>`}
+        <div class="hand-title">הקלפים שלך (${hand.length})</div>
+        <div class="fan">${hand.map(c => pcardHtml(c, chSel.includes(c.id) ? 'chosen' : '', `data-pc="${c.id}"`)).join('')}</div>
+      </div>
+    </div>`;
+  layoutFan();
+
+  const sref = ref(db, `games/${curGid}/state`);
+  const act = fn => runTransaction(sref, st => { if (!st) return st; st = Ch.norm(st); if (fn(st)) return; return st; })
+    .then(r => { if (!r.committed) toast('הפעולה לא התקבלה'); }).catch(() => toast('שגיאת חיבור'));
+  view.querySelectorAll('[data-pc]').forEach(el => el.onclick = () => {
+    const id = +el.dataset.pc;
+    if (chSel.includes(id)) chSel = chSel.filter(x => x !== id);
+    else if (chSel.length < 4) chSel = [...chSel, id];
+    else return toast('עד 4 קלפים');
+    renderCheat(curGame);
+  });
+  view.querySelectorAll('[data-claim]').forEach(b => b.onclick = () => { chClaim = +b.dataset.claim; renderCheat(curGame); });
+  if ($('#playBtn')) $('#playBtn').onclick = () => { const ids = chSel, c = claim; chSel = []; act(st => Ch.play(st, me.uid, ids, c)); };
+  if ($('#passBtn')) $('#passBtn').onclick = () => act(st => Ch.pass(st, me.uid));
+  if ($('#callBtn')) $('#callBtn').onclick = () => act(st => Ch.call(st, me.uid));
+  $('#exitBtn').onclick = () => {
+    modal(`<h3>לצאת מהמשחק?</h3><p class="muted">${isHost ? 'אתה המארח – יציאה תסגור את המשחק לכולם.' : 'תוכל לחזור מהמסך הראשי.'}</p>
+      ${isHost ? '' : '<button class="btn block" id="xHome">למסך הראשי (המשחק ממשיך)</button>'}
+      <button class="btn danger block" id="xLeave">${isHost ? 'סגור משחק' : 'עזוב'}</button><button class="btn secondary block" id="xNo">ביטול</button>`);
+    $('#xNo').onclick = closeModal; $('#xLeave').onclick = () => { closeModal(); leaveGame(); };
+    if ($('#xHome')) $('#xHome').onclick = () => { closeModal(); go('home'); };
+  };
+  if (s.winner && !$('#modal').dataset.winShown) {
+    $('#modal').dataset.winShown = '1';
+    modal(`<div style="font-size:60px">${s.winner === me.uid ? '🏆' : '🤥'}</div>
+      <h3>${s.winner === me.uid ? 'ניצחת!' : `${esc(names(s.winner))} ניצח!`}</h3>
+      ${isHost ? '<button class="btn block" id="again">🔁 משחק חדש</button>' : '<p class="muted">המארח יכול להתחיל משחק חדש</p>'}
+      <button class="btn secondary block" id="wHome">למסך הראשי</button>`);
+    if (isHost) $('#again').onclick = () => { closeModal(); startCheat(g); };
+    $('#wHome').onclick = () => { closeModal(); isHost ? leaveGame() : go('home'); };
+  }
+  if (!s.winner) delete $('#modal').dataset.winShown;
+}
+
+let chBusy = false, chCallSeen = '';
+function cheatTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Ch.norm(structuredClone(g.state));
+  if (s.winner) { finishTwoPlayer(g, s.winner, s.order); return; }
+  if (chBusy) return;
+  const gid = curGid, isBot = p => g.players[p]?.bot;
+  const lastKey = s.last ? `${s.last.by}:${s.pile.length}:${s.last.ids.join('.')}` : '';
+  const retick = () => { chBusy = false; if (curGid === gid && curGame) cheatTick(curGame); };
+  if (s.last && !s.last.called && lastKey !== chCallSeen) {
+    chCallSeen = lastKey;
+    const caller = s.order.find(p => isBot(p) && Ch.botWantsCall(s, p));
+    if (caller) {
+      chBusy = true;
+      setTimeout(() => runTransaction(ref(db, `games/${gid}/state`), st => {
+        if (!st) return st; st = Ch.norm(st);
+        const k = st.last ? `${st.last.by}:${st.pile.length}:${st.last.ids.join('.')}` : '';
+        if (k !== lastKey || Ch.call(st, caller)) return;
+        return st;
+      }).catch(() => {}).finally(retick), 1200 + Math.random() * 800);
+      return;
+    }
+  }
+  if (!isBot(s.turn)) return;
+  chBusy = true;
+  const cur = s.turn, before = lastKey + s.turn;
+  setTimeout(() => runTransaction(ref(db, `games/${gid}/state`), st => {
+    if (!st) return st; st = Ch.norm(st);
+    const k = (st.last ? `${st.last.by}:${st.pile.length}:${st.last.ids.join('.')}` : '') + st.turn;
+    if (k !== before || st.winner) return;
+    const m = Ch.botTurn(st, cur);
+    if (m.type === 'pass' ? Ch.pass(st, cur) : Ch.play(st, cur, m.ids, m.claim)) return;
+    return st;
+  }).catch(() => {}).finally(retick), 2400);
 }
 
 // ---------- friends ----------
