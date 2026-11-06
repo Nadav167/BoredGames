@@ -216,3 +216,28 @@ html[data-theme="dark"] .google-btn { background: #fff; border-color: #fff; }
 html, body { overflow-x: hidden; max-width: 100%; }
 .table, .hand-wrap { overflow: hidden; }
 .hand-title { text-align: center; font-size: 14px; margin-bottom: 2px; opacity: .9; }
+
+/* ===== The Imposter ===== */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.chip { border: 2px solid var(--line); background: var(--surface); color: var(--text); border-radius: 20px; padding: 7px 12px; font-size: 15px; }
+.chip.on { border-color: var(--accent); background: var(--accent); color: #fff; }
+.secret { width: 100%; min-height: 230px; border: 0; border-radius: 24px; margin-bottom: 14px; padding: 20px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #fff; font-size: 17px;
+  background: repeating-linear-gradient(45deg, #2a2d6b 0 14px, #22245a 14px 28px); box-shadow: var(--shadow); }
+.secret b { font-size: 24px; }
+.secret.open { background: linear-gradient(135deg, var(--accent), #8f5bff); }
+.secret.imp { background: linear-gradient(135deg, #b3261e, #ff6b4a); }
+.secret .word { font-size: 42px; font-weight: 900; line-height: 1.1; }
+.secret small { opacity: .75; margin-top: 6px; }
+.big-ico { font-size: 52px; line-height: 1; }
+.seq { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pill.me { background: var(--accent); color: #fff; }
+.vote-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 8px; border: 0; border-bottom: 1px solid var(--line);
+  background: none; color: var(--text); font-size: 17px; text-align: right; border-radius: 12px; }
+.vote-row:last-child { border-bottom: 0; }
+.vote-row.on { background: var(--accent); color: #fff; }
+.result { text-align: center; }
+.reveal-imps { display: flex; justify-content: center; gap: 22px; margin-top: 16px; }
+.win { text-align: center; color: #fff; }
+.win.group { background: var(--ok); }
+.win.imp { background: #b3261e; }

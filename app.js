@@ -8,6 +8,7 @@ import {
   getDatabase, ref, get, set, update, push, remove, onValue, runTransaction, onDisconnect, increment
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import * as Taki from './games/taki.js';
+import * as Imp from './games/imposter.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -25,7 +26,7 @@ const db = getDatabase(fbApp);
 // ---------- games catalogue ----------
 const GAMES = [
   { id: 'taki', name: 'טאקי', ico: '🃏', ready: true, min: 2, max: 8 },
-  { id: 'imposter', name: 'המתחזה', ico: '🕵️' },
+  { id: 'imposter', name: 'המתחזה', ico: '🕵️', ready: true, min: 3, max: 16, bots: false, table: true },
   { id: 'checkers', name: 'דמקה', ico: '⚫' },
   { id: 'backgammon', name: 'שש-בש', ico: '🎲' },
   { id: 'cheat', name: "צ'יט", ico: '🤥' },
@@ -293,11 +294,12 @@ function showHome() {
 function gameMenu(g) {
   modal(`
     <div style="font-size:48px">${g.ico}</div><h3>${esc(g.name)}</h3>
-    <button class="btn block" id="mFriends">👥 משחק עם חברים</button>
-    <div style="margin-top:14px" class="muted">או משחק מהיר נגד בוטים:</div>
+    ${g.table ? '<p class="muted">משחק סביב השולחן: כל אחד מחזיק את הטלפון שלו, והדיבור קורה בקול.</p>' : ''}
+    <button class="btn block" id="mFriends">👥 ${g.table ? 'פתח חדר והזמן את החברים' : 'משחק עם חברים'}</button>
+    ${g.bots === false ? '' : `<div style="margin-top:14px" class="muted">או משחק מהיר נגד בוטים:</div>
     <div class="row" style="justify-content:center;margin-top:6px">
       ${[1, 2, 3, 4, 5].map(n => `<button class="btn secondary small" data-bots="${n}">${n} 🤖</button>`).join('')}
-    </div>
+    </div>`}
     <button class="btn secondary block" id="mClose" style="margin-top:16px">ביטול</button>`);
   $('#mClose').onclick = closeModal;
   $('#mFriends').onclick = () => { closeModal(); createGame(g.id, 0); };
@@ -312,6 +314,7 @@ async function createGame(type, bots) {
   const players = { [me.uid]: { nick: me.nick, at: Date.now() } };
   for (let i = 0; i < bots; i++) { const [id, v] = botEntry(i); players[id] = v; }
   const g = { type, host: me.uid, status: 'lobby', players, createdAt: Date.now() };
+  if (type === 'imposter') g.settings = Imp.DEFAULT_SETTINGS;
   if (bots) { g.status = 'playing'; g.state = Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
@@ -329,8 +332,9 @@ function openGame(gid) {
     if (!g) { toast('המשחק נסגר'); set(ref(db, `users/${me.uid}/activeGame`), null); go('home'); return; }
     if (!g.players?.[me.uid]) { toast('יצאת מהמשחק'); go('home'); return; }
     curGame = g;
-    if (g.status === 'lobby') renderLobby(g); else renderTaki(g);
-    hostTick(g);
+    if (g.status === 'lobby') renderLobby(g);
+    else if (g.type === 'imposter') renderImposter(g);
+    else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
 }
@@ -350,15 +354,17 @@ function renderLobby(g) {
         <div class="grow">${esc(g.players[p].nick)} ${p === g.host ? '<span class="pill">מארח</span>' : ''}</div>
         ${isHost && g.players[p].bot ? `<button class="btn small secondary" data-kick="${p}">הסר</button>` : ''}
       </div>`).join('')}
-      ${isHost ? `<button class="btn secondary block" id="addBot" style="margin-top:10px">➕ הוסף בוט</button>` : ''}
+      ${isHost && info.bots !== false ? `<button class="btn secondary block" id="addBot" style="margin-top:10px">➕ הוסף בוט</button>` : ''}
     </div>
+    ${g.type === 'imposter' ? imposterSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
         <button class="btn small" data-inv="${f}">הזמן</button></div>`).join('')
       : '<p class="muted">עוד אין לך חברים ברשימה. אפשר להוסיף בתפריט ← חברים.</p>'}
     </div>` : '<p class="muted center-msg" style="min-height:0">ממתינים שהמארח יתחיל את המשחק…</p>'}
-    ${isHost ? `<button class="btn block" id="startBtn" ${players.length < info.min ? 'disabled' : ''}>🚀 התחל משחק</button>` : ''}
+    ${isHost ? `<button class="btn block" id="startBtn" ${players.length < info.min ? 'disabled' : ''}>🚀 ${g.state ? 'המשך' : 'התחל משחק'}</button>
+      ${players.length < info.min ? `<p class="muted" style="text-align:center">צריך לפחות ${info.min} שחקנים</p>` : ''}` : ''}
     <button class="btn danger block" id="leaveBtn" style="margin-top:10px">${isHost ? 'סגור חדר' : 'צא מהחדר'}</button>`;
   view.querySelectorAll('[data-inv]').forEach(b => b.onclick = async () => {
     await set(ref(db, `invites/${b.dataset.inv}/${curGid}`), { from: me.nick, game: g.type, at: Date.now() });
@@ -366,13 +372,15 @@ function renderLobby(g) {
   });
   view.querySelectorAll('[data-kick]').forEach(b => b.onclick = () => remove(ref(db, `games/${curGid}/players/${b.dataset.kick}`)));
   if (isHost) {
-    $('#addBot').onclick = () => {
+    if (g.type === 'imposter') bindImposterSettings(g);
+    if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
       v.at = Date.now();
       set(ref(db, `games/${curGid}/players/${id}`), v);
     };
-    $('#startBtn').onclick = () => update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
+    $('#startBtn').onclick = () => g.type === 'imposter' ? startImposter(g, g.state?.round || 0)
+      : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
 }
@@ -590,6 +598,142 @@ async function finishGame(g, s) {
     if (p === s.winner) u[`users/${p}/stats/${g.type}/won`] = increment(1);
   }
   if (Object.keys(u).length) await update(ref(db), u);
+}
+
+// ---------- The Imposter UI (around the table) ----------
+const impSettings = g => ({ ...Imp.DEFAULT_SETTINGS, ...(g.settings || {}) });
+
+function imposterSettingsHtml(g, isHost) {
+  const st = impSettings(g), n = Object.keys(g.players).length, maxK = Imp.maxImposters(Math.max(n, 3));
+  const cats = Object.entries(Imp.CATEGORIES);
+  if (!isHost) {
+    return `<div class="card"><div class="muted">הגדרות</div>
+      <p>${cats.filter(([k]) => st.cats[k]).map(([, c]) => `${c.ico} ${c.name}`).join(' · ') || 'כל הקטגוריות'}</p>
+      <p class="muted">${st.impCount} מתחזים · ${st.showCat ? 'המתחזה רואה את הקטגוריה' : 'המתחזה לא רואה כלום'}</p></div>`;
+  }
+  return `<div class="card"><div class="muted" style="margin-bottom:8px">קטגוריות</div>
+    <div class="chips">${cats.map(([k, c]) => `<button class="chip ${st.cats[k] ? 'on' : ''}" data-cat="${k}">${c.ico} ${c.name}</button>`).join('')}</div>
+    <div class="stat-row"><span>מספר מתחזים</span><span class="row">${[1, 2, 3].map(k =>
+      `<button class="btn small ${st.impCount === k ? '' : 'secondary'}" data-imp="${k}" ${k > maxK ? 'disabled' : ''}>${k}</button>`).join('')}</span></div>
+    <label class="stat-row"><span>המתחזה רואה את הקטגוריה</span><input type="checkbox" id="showCat" ${st.showCat ? 'checked' : ''}></label>
+    ${maxK < 3 ? `<div class="muted" style="font-size:13px">יותר מתחזים אפשר רק עם יותר שחקנים (${maxK < 2 ? '2 מתחזים מ-5 שחקנים, ' : ''}3 מתחזים מ-7)</div>` : ''}
+  </div>`;
+}
+function bindImposterSettings(g) {
+  const st = impSettings(g), sref = ref(db, `games/${curGid}/settings`);
+  view.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
+    const cats = { ...st.cats, [b.dataset.cat]: !st.cats[b.dataset.cat] };
+    if (!Object.values(cats).some(Boolean)) return toast('צריך לפחות קטגוריה אחת');
+    update(sref, { ...st, cats });
+  });
+  view.querySelectorAll('[data-imp]').forEach(b => b.onclick = () => update(sref, { ...st, impCount: +b.dataset.imp }));
+  const sc = $('#showCat'); if (sc) sc.onchange = () => update(sref, { ...st, showCat: sc.checked });
+}
+const startImposter = (g, prevRound = 0) =>
+  update(ref(db, `games/${curGid}`), { status: 'playing', state: Imp.newRound(orderOf(g.players), impSettings(g), prevRound) });
+
+let impRevealed = false, impRoundSeen = 0;
+function renderImposter(g) {
+  view.classList.remove('game-mode');
+  const s = g.state, isHost = g.host === me.uid;
+  const order = orderOf(g.players);
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const imps = Object.keys(s.imposters || {});
+  const amImp = !!s.imposters?.[me.uid];
+  const cat = Imp.CATEGORIES[s.cat];
+  if (impRoundSeen !== s.round) { impRevealed = false; impRoundSeen = s.round; }
+  const votes = s.votes || {};
+  const top = `<div class="row" style="margin-bottom:10px"><button class="btn small secondary" id="exitBtn">✕ יציאה</button>
+    <div class="grow muted" style="text-align:center">🕵️ המתחזה · סיבוב ${s.round}</div>
+    ${isHost ? '<button class="btn small secondary" id="setBtn">⚙️</button>' : '<span style="width:40px"></span>'}</div>`;
+
+  let body = '';
+  if (s.phase === 'play') {
+    const i = order.indexOf(s.first);
+    const seq = order.map((_, k) => order[((i + s.dir * k) % order.length + order.length) % order.length]);
+    body = `
+      <button class="secret ${impRevealed ? (amImp ? 'imp' : 'open') : ''}" id="secret">
+        ${!impRevealed ? '<div class="big-ico">🤫</div><b>לחץ כדי לראות</b><span>בלי שאף אחד יציץ!</span>'
+          : amImp ? `<div class="big-ico">🕵️</div><b>אתה המתחזה!</b>${s.showCat ? `<span>הקטגוריה: ${cat.ico} ${cat.name}</span>` : '<span>אין לך שום רמז. תקשיב טוב…</span>'}${imps.length > 1 ? `<span>יש ${imps.length} מתחזים</span>` : ''}<small>לחץ להסתיר</small>`
+          : `<span>${cat.ico} ${cat.name}</span><div class="word">${esc(s.word)}</div><small>לחץ להסתיר</small>`}
+      </button>
+      <div class="card">
+        <b>איך משחקים</b>
+        <p class="muted" style="margin:6px 0">עוברים בסבב, וכל אחד אומר <b>מילה אחת</b> שקשורה למילה הסודית. לא ברור מדי, כדי שהמתחזה לא יבין, ולא מעורפל מדי, כדי שלא יחשדו בך.</p>
+        <div class="muted">סדר הדיבור:</div>
+        <div class="seq">${seq.map((p, k) => `<span class="pill ${p === me.uid ? 'me' : ''}">${k + 1}. ${esc(names(p))}</span>`).join('')}</div>
+      </div>
+      ${isHost ? `<button class="btn block" id="toVote">🗳️ להצבעה</button>
+        <button class="btn secondary block" id="reveal" style="margin-top:8px">👀 חשוף בלי הצבעה</button>`
+        : '<p class="muted" style="text-align:center">כשמסיימים לדבר, המארח יפתח הצבעה</p>'}`;
+  } else if (s.phase === 'vote') {
+    const n = Object.keys(votes).length;
+    body = `
+      <h1>🗳️ מי המתחזה?</h1>
+      <p class="muted">${imps.length > 1 ? `יש ${imps.length} מתחזים. ` : ''}לחץ על מי שאתה חושד בו. אפשר לשנות עד שההצבעה נסגרת.</p>
+      <div class="card">${order.filter(p => p !== me.uid).map(p => `
+        <button class="vote-row ${votes[me.uid] === p ? 'on' : ''}" data-vote="${p}">
+          <div class="avatar">${esc(names(p)[0])}</div><div class="grow">${esc(names(p))}</div>
+          ${votes[p] ? '<span class="pill">הצביע ✓</span>' : ''}</button>`).join('')}</div>
+      <p class="muted" style="text-align:center">${n} מתוך ${order.length} הצביעו</p>
+      ${isHost ? '<button class="btn block" id="endVote">סגור הצבעה</button>' : ''}`;
+  } else {
+    const r = s.result || {}, t = Imp.tally(votes);
+    const final = r.winner;
+    body = `
+      <div class="card result">
+        ${r.voted ? (t.top ? `<div class="muted">הכי הרבה קולות קיבל</div><h2 style="margin:4px 0 0;color:var(--text)">${esc(names(t.top))}</h2>
+          <div class="muted">${t.counts[t.top]} קולות</div>` : '<h2 style="color:var(--text)">תיקו בהצבעה!</h2>') : ''}
+        <div class="reveal-imps">${imps.map(p => `<div><div class="big-ico">🕵️</div><b>${esc(names(p))}</b></div>`).join('')}</div>
+        <div class="muted">${imps.length > 1 ? 'היו המתחזים' : 'היה המתחזה'}</div>
+        <div style="margin-top:12px">המילה: <b style="font-size:22px">${esc(s.word)}</b> <span class="muted">(${cat.name})</span></div>
+      </div>
+      ${final ? `<div class="card win ${final}"><div class="big-ico">${final === 'group' ? '🎉' : '😈'}</div>
+          <h2 style="color:inherit;margin:0">${final === 'group' ? 'הקבוצה ניצחה!' : (imps.length > 1 ? 'המתחזים ניצחו!' : 'המתחזה ניצח!')}</h2></div>
+        ${isHost ? '<button class="btn block" id="nextRound">🔁 סיבוב חדש</button>' : '<p class="muted" style="text-align:center">המארח יתחיל סיבוב חדש</p>'}`
+      : r.caught ? `<div class="card"><b>המתחזה נתפס!</b> <span class="muted">יש לו הזדמנות אחרונה: לנחש בקול את המילה.</span>
+          ${isHost ? `<div class="row" style="margin-top:10px"><button class="btn ok grow" id="guessNo">טעה ❌</button><button class="btn danger grow" id="guessYes">ניחש נכון ✅</button></div>` : '<p class="muted">המארח יסמן אם הניחוש נכון</p>'}</div>`
+      : ''}`;
+  }
+  view.innerHTML = top + body;
+
+  $('#exitBtn').onclick = () => {
+    modal(`<h3>לצאת מהמשחק?</h3><p class="muted">${isHost ? 'אתה המארח – יציאה תסגור את המשחק לכולם.' : ''}</p>
+      <button class="btn danger block" id="xLeave">${isHost ? 'סגור משחק' : 'עזוב'}</button><button class="btn secondary block" id="xNo">ביטול</button>`);
+    $('#xNo').onclick = closeModal; $('#xLeave').onclick = () => { closeModal(); leaveGame(); };
+  };
+  if ($('#setBtn')) $('#setBtn').onclick = () => update(ref(db, `games/${curGid}`), { status: 'lobby' });
+  if ($('#secret')) $('#secret').onclick = () => { impRevealed = !impRevealed; renderImposter(curGame); };
+  const st = ref(db, `games/${curGid}/state`);
+  if ($('#toVote')) $('#toVote').onclick = () => update(st, { phase: 'vote', votes: null });
+  if ($('#reveal')) $('#reveal').onclick = () => update(st, { phase: 'result', result: { voted: false, caught: true } });
+  view.querySelectorAll('[data-vote]').forEach(b => b.onclick = () => set(ref(db, `games/${curGid}/state/votes/${me.uid}`), b.dataset.vote));
+  if ($('#endVote')) $('#endVote').onclick = () => closeVote(g);
+  if ($('#guessNo')) $('#guessNo').onclick = () => decideImposter(g, 'group');
+  if ($('#guessYes')) $('#guessYes').onclick = () => decideImposter(g, 'imp');
+  if ($('#nextRound')) $('#nextRound').onclick = () => startImposter(g, s.round);
+  // host closes the vote automatically once everyone voted
+  if (isHost && s.phase === 'vote' && order.every(p => votes[p])) closeVote(g);
+}
+
+async function closeVote(g) {
+  const s = g.state, t = Imp.tally(s.votes);
+  const caught = !!(t.top && s.imposters?.[t.top]);
+  const r = await runTransaction(ref(db, `games/${curGid}/state/phase`), ph => ph === 'vote' ? 'result' : undefined);
+  if (!r.committed) return;
+  await update(ref(db, `games/${curGid}/state`), { result: { voted: true, caught } });
+  if (!caught) decideImposter(g, 'imp');
+}
+
+async function decideImposter(g, winner) {
+  const r = await runTransaction(ref(db, `games/${curGid}/state/result/winner`), w => w ? undefined : winner);
+  if (!r.committed) return;
+  const s = g.state, u = {};
+  for (const p of orderOf(g.players)) {
+    u[`users/${p}/stats/imposter/played`] = increment(1);
+    if ((winner === 'imp') === !!s.imposters?.[p]) u[`users/${p}/stats/imposter/won`] = increment(1);
+  }
+  await update(ref(db), u);
 }
 
 // ---------- friends ----------
