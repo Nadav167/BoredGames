@@ -1,6 +1,9 @@
 // BoredGames – app shell
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import {
+  getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+  getRedirectResult, linkWithPopup, signInWithCredential, signOut
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getDatabase, ref, get, set, update, push, remove, onValue, runTransaction, onDisconnect, increment
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
@@ -85,47 +88,143 @@ function go(name, arg) {
 }
 
 // ---------- auth & nickname ----------
+const gProvider = new GoogleAuthProvider();
+gProvider.setCustomParameters({ prompt: 'select_account' });
+let claiming = false, sessionStarted = false, loginShown = '';
+const G_ICON = `<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.5 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.3.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.7l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>`;
+
+getRedirectResult(auth).catch(e => toast('ההתחברות עם Google נכשלה: ' + (e.code || e.message)));
+
 onAuthStateChanged(auth, async user => {
-  if (!user) {
-    try { await signInAnonymously(auth); }
-    catch (e) {
-      view.innerHTML = `<div class="center-msg"><div><h1>😕 אין חיבור לשרת</h1>
-        <p class="muted">צריך להפעיל ב-Firebase את Authentication ← Anonymous.<br><small>${esc(e.code || e.message)}</small></p></div></div>`;
-    }
-    return;
-  }
+  if (!user) { showWelcome(); return; }
   me.uid = user.uid;
+  updateAccountMenu();
+  if (claiming || sessionStarted) return;
   const snap = await get(ref(db, `users/${me.uid}/nick`));
   if (snap.exists()) { me.nick = snap.val(); startSession(); }
-  else showNickSetup();
+  else showNickSetup(user.displayName ? user.displayName.split(' ')[0] : '');
 });
 
-function showNickSetup() {
+function validNick(n) {
+  if (n.length < 2) return 'לפחות 2 תווים';
+  if (n.length > 16) return 'עד 16 תווים';
+  if (/[.#$\[\]\/]/.test(n)) return 'בלי התווים . # $ [ ] /';
+  return null;
+}
+async function claimNick(n) {
+  const r = await runTransaction(ref(db, `nicks/${nickKey(n)}`), cur => (cur === null || cur === me.uid) ? me.uid : undefined);
+  if (!r.committed) return false;
+  await update(ref(db, `users/${me.uid}`), { nick: n, createdAt: Date.now() });
+  me.nick = n; return true;
+}
+const nickInput = (val = '') => `<input class="input" id="nickIn" type="text" inputmode="text" dir="auto" value="${esc(val)}"
+  placeholder="שם כינוי" autocomplete="nickname" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">`;
+
+async function googleLogin(btn) {
+  btn.disabled = true;
+  try { await signInWithPopup(auth, gProvider); }
+  catch (e) {
+    if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'].includes(e.code))
+      return signInWithRedirect(auth, gProvider);
+    if (e.code !== 'auth/popup-closed-by-user') toast('ההתחברות נכשלה: ' + (e.code || e.message));
+    btn.disabled = false;
+  }
+}
+
+// first screen: nickname only, or Google
+function showWelcome() {
+  if (loginShown === 'welcome') return;
+  loginShown = 'welcome';
   view.innerHTML = `
     <div class="center-msg"><div class="card" style="width:100%;max-width:380px">
       <div style="font-size:54px">🎲</div>
       <h1>ברוכים הבאים ל-BoredGames</h1>
-      <p class="muted">בחר שם כינוי. החברים שלך ימצאו אותך לפיו, והסטטיסטיקות נשמרות עליו.</p>
-      <input class="input" id="nickIn" maxlength="16" placeholder="שם כינוי" autocomplete="off">
-      <button class="btn block" id="nickGo" style="margin-top:12px">יאללה</button>
+      <button class="btn block google-btn" id="gBtn">${G_ICON}<span>התחברות עם Google</span></button>
+      <p class="muted" style="font-size:13px;margin:6px 0 0">מומלץ: ככה החשבון והסטטיסטיקות נשמרים גם אם מחליפים טלפון</p>
+      <div class="or"><span>או</span></div>
+      <p class="muted" style="margin-top:0">כניסה מהירה עם שם כינוי בלבד</p>
+      ${nickInput()}
+      <button class="btn secondary block" id="nickGo" style="margin-top:12px">יאללה</button>
     </div></div>`;
+  $('#gBtn').onclick = () => googleLogin($('#gBtn'));
   const go_ = async () => {
-    const n = $('#nickIn').value.trim();
-    if (n.length < 2) return toast('לפחות 2 תווים');
-    if (/[.#$\[\]\/]/.test(n)) return toast('בלי התווים . # $ [ ] /');
-    $('#nickGo').disabled = true;
+    const n = $('#nickIn').value.trim(), err = validNick(n);
+    if (err) return toast(err);
+    $('#nickGo').disabled = true; claiming = true;
     try {
-      const r = await runTransaction(ref(db, `nicks/${nickKey(n)}`), cur => (cur === null || cur === me.uid) ? me.uid : undefined);
-      if (!r.committed) { toast('הכינוי הזה תפוס, נסה אחר'); $('#nickGo').disabled = false; return; }
-      await set(ref(db, `users/${me.uid}`), { nick: n, createdAt: Date.now() });
-      me.nick = n; startSession();
-    } catch (e) { toast('שגיאה: ' + (e.code || e.message)); $('#nickGo').disabled = false; }
+      const taken = (await get(ref(db, `nicks/${nickKey(n)}`))).exists();
+      if (taken) { toast('הכינוי הזה תפוס, נסה אחר'); return; }
+      await signInAnonymously(auth); me.uid = auth.currentUser.uid;
+      if (await claimNick(n)) startSession(); else toast('הכינוי הזה תפוס, נסה אחר');
+    } catch (e) { toast('שגיאה: ' + (e.code || e.message)); }
+    finally { claiming = false; if ($('#nickGo')) $('#nickGo').disabled = false; }
   };
   $('#nickGo').onclick = go_;
   $('#nickIn').onkeydown = e => e.key === 'Enter' && go_();
 }
 
+// signed in (e.g. new Google user) but no nickname yet
+function showNickSetup(prefill) {
+  if (loginShown === 'nick') return;
+  loginShown = 'nick';
+  view.innerHTML = `
+    <div class="center-msg"><div class="card" style="width:100%;max-width:380px">
+      <div style="font-size:54px">👋</div>
+      <h1>בחר שם כינוי</h1>
+      <p class="muted">החברים שלך ימצאו אותך לפיו, והסטטיסטיקות נשמרות עליו.</p>
+      ${nickInput(prefill)}
+      <button class="btn block" id="nickGo" style="margin-top:12px">יאללה</button>
+      <button class="btn secondary block" id="nickOut" style="margin-top:8px">חזרה</button>
+    </div></div>`;
+  const go_ = async () => {
+    const n = $('#nickIn').value.trim(), err = validNick(n);
+    if (err) return toast(err);
+    $('#nickGo').disabled = true; claiming = true;
+    try { if (await claimNick(n)) startSession(); else toast('הכינוי הזה תפוס, נסה אחר'); }
+    catch (e) { toast('שגיאה: ' + (e.code || e.message)); }
+    finally { claiming = false; if ($('#nickGo')) $('#nickGo').disabled = false; }
+  };
+  $('#nickGo').onclick = go_;
+  $('#nickIn').onkeydown = e => e.key === 'Enter' && go_();
+  $('#nickOut').onclick = () => signOut(auth).then(() => location.reload());
+}
+
+// account items in the side menu
+function updateAccountMenu() {
+  const u = auth.currentUser;
+  $('#linkGoogle').hidden = !u || !u.isAnonymous;
+  $('#logoutBtn').hidden = !u || u.isAnonymous;
+  $('#drawerMail').textContent = u && !u.isAnonymous ? (u.email || '') : '';
+}
+$('#linkGoogle').onclick = async () => {
+  openDrawer(false);
+  try {
+    await linkWithPopup(auth.currentUser, gProvider);
+    await auth.currentUser.reload(); updateAccountMenu();
+    toast('החשבון חובר ל-Google ✓');
+  } catch (e) {
+    if (e.code === 'auth/credential-already-in-use') {
+      const cred = GoogleAuthProvider.credentialFromError(e);
+      modal(`<h3>חשבון ה-Google הזה כבר רשום</h3>
+        <p class="muted">הוא שייך לכינוי אחר. לעבור אליו? הכינוי הנוכחי (${esc(me.nick)}) יישאר במכשיר הזה רק אם לא תעבור.</p>
+        <button class="btn block" id="swY">עבור לחשבון ה-Google</button>
+        <button class="btn secondary block" id="swN">ביטול</button>`);
+      $('#swN').onclick = closeModal;
+      $('#swY').onclick = async () => { await signInWithCredential(auth, cred); location.reload(); };
+    } else if (e.code !== 'auth/popup-closed-by-user') toast('החיבור נכשל: ' + (e.code || e.message));
+  }
+};
+$('#logoutBtn').onclick = () => {
+  openDrawer(false);
+  modal(`<h3>להתנתק?</h3><p class="muted">תוכל להתחבר שוב עם Google מכל טלפון.</p>
+    <button class="btn danger block" id="loY">התנתק</button><button class="btn secondary block" id="loN">ביטול</button>`);
+  $('#loN').onclick = closeModal;
+  $('#loY').onclick = async () => { await remove(ref(db, `presence/${me.uid}`)).catch(() => {}); await signOut(auth); location.reload(); };
+};
+
 function startSession() {
+  if (sessionStarted) return;
+  sessionStarted = true; loginShown = '';
   $('#meNick').textContent = me.nick;
   $('#drawerNick').textContent = me.nick;
   onValue(ref(db, '.info/connected'), s => {

@@ -170,3 +170,11 @@ main.game-mode { max-width: none; padding: 0; display: flex; flex-direction: col
 
 .game-top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,.25); }
 .game-top .btn { background: rgba(255,255,255,.15); }
+
+/* login */
+input, textarea { -webkit-user-select: text; user-select: text; }
+.google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff; color: #1f1f1f; border: 2px solid var(--line); }
+html[data-theme="dark"] .google-btn { background: #fff; border-color: #fff; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); margin: 16px 0 10px; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.drawer nav button[hidden] { display: none; }
