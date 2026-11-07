@@ -480,3 +480,21 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .cn-hintbox { margin-top: 10px; padding: 8px 10px; background: var(--surface2); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .cn-card { word-break: normal; overflow-wrap: normal; }
 .cn-card span.l { font-size: .82em; } .cn-card span.xl { font-size: .7em; }
+
+/* ===== Cards Against Humanity ===== */
+.cah-scores { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.pill.czar { background: #ffd84d; color: #222; }
+.cah-black { background: #111; color: #fff; border-radius: 16px; padding: 20px 18px; font-size: 21px; font-weight: 700; line-height: 1.4; box-shadow: var(--shadow); margin-bottom: 12px; }
+.cah-black .blank { border-bottom: 3px solid #fff; color: transparent; }
+.cah-hand { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 70px; }
+.cah-subs { display: flex; flex-direction: column; gap: 8px; padding-bottom: 70px; }
+.cah-white { background: #fff; color: #111; border: 2px solid #ddd; border-radius: 14px; padding: 14px 12px; font-size: 16px; font-weight: 700; text-align: right; font-family: inherit; min-height: 74px; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+.cah-white.big { font-size: 18px; line-height: 1.45; }
+.cah-white.sel { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent); }
+.cah-white:disabled { opacity: 1; cursor: default; }
+.sticky-btn { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom)); box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+.status-card { background: var(--surface); border-radius: 16px; padding: 18px; text-align: center; font-size: 17px; line-height: 1.6; box-shadow: var(--shadow); }
+.cah-win { text-align: center; display: flex; flex-direction: column; gap: 8px; }
+.cah-line { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.cah-white[dir=ltr], .cah-black[dir=ltr] { text-align: left; } .cah-white .ans { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+html[data-theme="dark"] .cah-white .ans { color: #5b3fd6; }

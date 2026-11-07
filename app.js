@@ -20,6 +20,7 @@ import * as Cs from './games/chess.js';
 import * as Rk from './games/rummikub.js';
 import * as Pk from './games/poker.js';
 import * as Cn from './games/codenames.js';
+import * as Ca from './games/cah.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -46,7 +47,7 @@ const GAMES = [
   { id: 'eight', name: 'שמונה וחצי', ico: '8½', ready: true, min: 2, max: 8 },
   { id: 'perudo', name: 'פרודו', ico: '🎰', ready: true, min: 2, max: 10, bots: false },
   { id: 'rummy', name: 'רמי', ico: '🀄', ready: true, min: 2, max: 4 },
-  { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈' },
+  { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈', ready: true, min: 3, max: 12 },
   { id: 'chess', name: 'שחמט', ico: '♟️', ready: true, min: 2, max: 2, botLevels: true },
   { id: 'poker', name: 'פוקר', ico: '♠️', ready: true, min: 2, max: 8 },
   { id: 'codenames', name: 'שם קוד', ico: '🔤', ready: true, min: 4, max: 16, bots: false },
@@ -337,11 +338,13 @@ async function createGame(type, bots, level) {
   if (type === 'chess') g.settings = { minutes: 0 };
   if (type === 'rummy') g.settings = { turnSec: 0 };
   if (type === 'poker') g.settings = Pk.DEFAULT_SETTINGS;
+  if (type === 'cah') g.settings = Ca.DEFAULT_SETTINGS;
   if (type === 'codenames') g.settings = { lang: 'he', teams: { [me.uid]: 'r' }, spy: {} };
   if (bots) { g.status = 'playing'; g.state = type === 'chess' ? startChessState(players, 0) : type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
     : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
     : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'rummy' ? Rk.newGame(orderOf(players), 0)
-    : type === 'poker' ? Pk.newGame(orderOf(players), Pk.DEFAULT_SETTINGS) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
+    : type === 'poker' ? Pk.newGame(orderOf(players), Pk.DEFAULT_SETTINGS)
+    : type === 'cah' ? Ca.newGame(orderOf(players), Ca.DEFAULT_SETTINGS) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -371,6 +374,7 @@ function openGame(gid) {
     else if (g.type === 'rummy') { renderRummi(g); rummiTick(g); }
     else if (g.type === 'poker') { renderPoker(g); pokerTick(g); }
     else if (g.type === 'codenames') renderCodenames(g);
+    else if (g.type === 'cah') { renderCah(g); cahTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -402,6 +406,7 @@ function renderLobby(g) {
     ${g.type === 'rummy' ? rummiSettingsHtml(g, isHost) : ''}
     ${g.type === 'poker' ? pokerSettingsHtml(g, isHost) : ''}
     ${g.type === 'codenames' ? codenamesSettingsHtml(g, isHost) : ''}
+    ${g.type === 'cah' ? cahSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -426,6 +431,7 @@ function renderLobby(g) {
     if (g.type === 'chess') bindChessSettings();
     if (g.type === 'rummy') bindRummiSettings();
     if (g.type === 'poker') bindPokerSettings(g);
+    if (g.type === 'cah') bindCahSettings(g);
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -444,6 +450,7 @@ function renderLobby(g) {
       : g.type === 'rummy' ? startRummi(g)
       : g.type === 'poker' ? startPoker(g)
       : g.type === 'codenames' ? startCodenames(g)
+      : g.type === 'cah' ? startCah(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -2277,6 +2284,94 @@ function renderCodenames(g) {
     if (isHost && g.status === 'playing') finishMulti(g, team(s.winner), Object.keys(s.teams));
     winDialog(g, banner, myTeam === s.winner ? '🏆' : '🕵️', () => update(ref(db, `games/${curGid}`), { status: 'lobby' }));
   } else delete $('#modal').dataset.winShown;
+}
+
+// ---------- Cards Against Humanity UI ----------
+const cahSet = g => ({ ...Ca.DEFAULT_SETTINGS, ...(g.settings || {}) });
+function cahSettingsHtml(g, isHost) {
+  const st = cahSet(g);
+  const modeTxt = { online: '📱 אונליין – כולם רואים את התשובות', table: '🍻 סביב השולחן – הקיסר מקריא בקול' };
+  if (!isHost) return `<div class="card"><div class="muted">הגדרות</div><p>${st.lang === 'he' ? 'עברית' : 'English'} · ${modeTxt[st.mode]} · עד ${st.target} נקודות</p></div>`;
+  const chips = (key, opts) => `<div class="chips">${opts.map(([v, t]) => `<button class="chip ${st[key] === v ? 'on' : ''}" data-cah="${key}" data-v="${v}">${t}</button>`).join('')}</div>`;
+  return `<div class="card">
+    <div class="muted" style="margin-bottom:6px">שפת הקלפים</div>${chips('lang', [['he', 'עברית'], ['en', 'English']])}
+    <div class="muted" style="margin:10px 0 6px">מצב</div>${chips('mode', Object.entries(modeTxt))}
+    <div class="muted" style="margin:10px 0 6px">משחקים עד</div>${chips('target', [[5, '5 נקודות'], [7, '7 נקודות'], [10, '10 נקודות']])}</div>`;
+}
+function bindCahSettings(g) {
+  view.querySelectorAll('[data-cah]').forEach(b => b.onclick = () => {
+    const k = b.dataset.cah, v = k === 'target' ? +b.dataset.v : b.dataset.v;
+    update(ref(db, `games/${curGid}/settings`), { ...cahSet(g), [k]: v });
+  });
+}
+const startCah = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Ca.newGame(orderOf(g.players), cahSet(g)) });
+
+let caSel = null, caKey = '';
+function renderCah(g) {
+  view.classList.remove('game-mode');
+  const s = Ca.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const me_ = me.uid, czar = s.czar === me_, table = s.mode === 'table';
+  const key = s.round + s.phase; if (caKey !== key) { caKey = key; caSel = null; }
+  const B = Ca.text(s, 'black', s.black), W = i => Ca.text(s, 'white', i);
+  const dir = s.lang === 'en' ? 'dir="ltr"' : '';
+  const F = (b, w) => esc(Ca.fill(b, w)).replace('⟦', '<b class="ans">').replace('⟧', '</b>');
+  const waiting = Ca.players(s).filter(p => s.subs[p] == null);
+  let body = '';
+  if (s.phase === 'submit') {
+    if (czar) body = `<div class="status-card">👑 אתה הקיסר בסיבוב הזה.<br>מחכים ל: ${waiting.map(p => esc(names(p))).join(', ')}</div>`;
+    else if (s.subs[me_] != null) body = `<div class="status-card">✓ שלחת: «${esc(W(s.subs[me_]))}»<br><span class="muted">מחכים ל: ${waiting.map(p => esc(names(p))).join(', ')}</span></div>`;
+    else body = `<div class="muted" style="margin:6px 0">בחר את הקלף הכי מצחיק:</div>
+      <div class="cah-hand">${s.hands[me_].map(i => `<button class="cah-white ${caSel === i ? 'sel' : ''}" data-w="${i}" ${dir}>${esc(W(i))}</button>`).join('')}</div>
+      <button class="btn block sticky-btn" id="caSend" ${caSel == null ? 'disabled' : ''}>שלח${caSel != null ? ` «${esc(W(caSel))}»` : ''}</button>`;
+  } else if (s.phase === 'judge') {
+    const showAll = !table || czar;
+    body = !showAll ? `<div class="status-card">🎤 ${esc(names(s.czar))} מקריא את התשובות בקול ובוחר…</div>`
+      : `<div class="muted" style="margin:6px 0">${czar ? (table ? '🎤 הקרא כל תשובה בקול, ואז בחר את המנצחת:' : 'בחר את התשובה המנצחת:') : `${esc(names(s.czar))} בוחר…`}</div>
+        <div class="cah-subs">${s.reveal.map(p => `<button class="cah-white big ${caSel === p ? 'sel' : ''}" data-pick="${p}" ${czar ? '' : 'disabled'} ${dir}>${F(B, W(s.subs[p]))}</button>`).join('')}</div>
+        ${czar ? `<button class="btn block sticky-btn" id="caPick" ${caSel == null ? 'disabled' : ''}>👑 זו המנצחת</button>` : ''}`;
+  } else {
+    body = `<div class="cah-win"><div class="muted">🏆 ${esc(names(s.roundWinner))} מקבל נקודה</div><div class="cah-white big" ${dir}>${F(B, W(s.subs[s.roundWinner]))}</div></div>
+      <div class="muted" style="margin:8px 0 4px">שאר התשובות:</div>
+      ${s.reveal.filter(p => p !== s.roundWinner).map(p => `<div class="cah-line"><b>${esc(names(p))}:</b> <span ${dir}>${esc(W(s.subs[p]))}</span></div>`).join('')}
+      ${(czar || isHost) && !s.winner ? '<button class="btn block" id="caNext" style="margin-top:12px">סיבוב הבא ▶</button>' : ''}`;
+  }
+  view.innerHTML = `
+    <div class="row" style="margin-bottom:10px"><button class="btn small secondary" id="exitBtn">✕ יציאה</button>
+      <div class="grow muted" style="text-align:center">סיבוב ${s.round} · עד ${s.target}</div></div>
+    <div class="cah-scores">${s.order.map(p => `<span class="pill ${p === s.czar ? 'czar' : ''}">${p === s.czar ? '👑 ' : ''}${esc(names(p))} ${s.scores[p]}</span>`).join('')}</div>
+    <div class="cah-black" ${dir}>${esc(B).replace('___', '<span class="blank">______</span>')}</div>
+    ${body}`;
+  const tx = fn => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = Ca.norm(st); return fn(st) ? undefined : st; })
+    .then(r => { if (!r.committed) toast('הפעולה לא התקבלה'); }).catch(() => toast('שגיאת חיבור'));
+  view.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { caSel = +b.dataset.w; renderCah(curGame); });
+  view.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { caSel = b.dataset.pick; renderCah(curGame); });
+  if ($('#caSend')) $('#caSend').onclick = () => { const c = caSel; tx(st => Ca.submit(st, me_, c)); };
+  if ($('#caPick')) $('#caPick').onclick = () => { const w = caSel; tx(st => Ca.pick(st, me_, w)); };
+  if ($('#caNext')) $('#caNext').onclick = () => tx(st => Ca.next(st));
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if (s.winner) winDialog(g, s.winner === me_ ? 'ניצחת! אתה הכי מצחיק 😈' : `${esc(names(s.winner))} ניצח!`, '😈', () => startCah(g));
+  else delete $('#modal').dataset.winShown;
+}
+let caBusy = false;
+function cahTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Ca.norm(structuredClone(g.state));
+  if (s.winner) { finishMulti(g, [s.winner], s.order); return; }
+  if (caBusy) return;
+  const isBot = p => g.players[p]?.bot, gid = curGid, stamp = s.round + s.phase + Object.keys(s.subs).length;
+  let job = null, delay = 1500;
+  const bot = Ca.players(s).find(p => isBot(p) && s.subs[p] == null);
+  if (s.phase === 'submit' && bot) job = st => Ca.submit(st, bot, st.hands[bot][Math.floor(Math.random() * st.hands[bot].length)]);
+  else if (s.phase === 'judge' && isBot(s.czar)) { delay = 3500; job = st => Ca.pick(st, st.czar, st.reveal[Math.floor(Math.random() * st.reveal.length)]); }
+  else if (s.phase === 'result' && isBot(s.czar)) { delay = 6000; job = st => Ca.next(st); }
+  if (!job) return;
+  caBusy = true;
+  setTimeout(() => runTransaction(ref(db, `games/${gid}/state`), st => {
+    if (!st) return st; st = Ca.norm(st);
+    if (st.round + st.phase + Object.keys(st.subs).length !== stamp) return;
+    return job(st) ? undefined : st;
+  }).catch(() => {}).finally(() => { caBusy = false; if (curGid === gid && curGame) cahTick(curGame); }), delay);
 }
 
 // ---------- friends ----------
