@@ -519,3 +519,26 @@ html[data-theme="dark"] .cah-white .ans { color: #5b3fd6; }
 .board .sq, .board .csq { min-width: 0; min-height: 0; overflow: hidden; }
 .board .pc { width: 78%; height: auto; aspect-ratio: 1; font-size: clamp(12px, 3.8vw, 24px); }
 .board .cp { line-height: 1; max-height: 100%; }
+
+/* ===== 8½ (Shafir) ===== */
+.ecard { --w: 58px; width: var(--w); height: calc(var(--w) * 1.42); border-radius: 10px; background: #fff; border: 2px solid #e0e0e0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 3px 8px rgba(0,0,0,.3); flex-shrink: 0; cursor: pointer;
+  transition: transform .15s; user-select: none; color: #222; }
+.ecard b { font-size: calc(var(--w) * .55); font-weight: 900; line-height: 1; }
+.ecard small { font-size: calc(var(--w) * .17); font-weight: 700; color: #666; }
+.ecard.half { background: linear-gradient(135deg, #fff, #f3e5f5); } .ecard.half b { color: #8e24aa; }
+.ecard.devil { background: linear-gradient(135deg, #fff, #ffebee); }
+.ecard.back { background: repeating-linear-gradient(45deg, #5b3fd6 0 8px, #4a32b8 8px 16px); border-color: #fff; }
+.ecard.back b { color: #ffd84d; font-size: calc(var(--w) * .32); }
+.ecard.big { --w: 78px; } .ecard.mid { --w: 52px; } .ecard.tiny { --w: 26px; border-width: 1px; border-radius: 5px; box-shadow: none; }
+.ecard.chosen { transform: translateY(-10px); box-shadow: 0 0 0 3px #ffd84d, 0 8px 14px rgba(0,0,0,.4); }
+.ecard.dim { filter: brightness(.6); }
+.ecard.pickable { box-shadow: 0 0 0 3px rgba(255,216,77,.85), 0 3px 8px rgba(0,0,0,.3); }
+.e-hand { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; padding: 12px 8px 4px; direction: ltr; }
+.e-slot { width: 52px; height: 92px; }
+.e-value { display: flex; flex-direction: column; align-items: center; color: #fff; }
+.e-value b { font-size: 44px; font-weight: 900; color: #ffd84d; line-height: 1; } .e-value small { opacity: .8; }
+.e-slot { position: relative; width: 56px; height: 100px; }
+.e-slot .ecard { position: absolute; top: 0; left: 2px; }
+.e-slot .ecard.on-top { top: 24px; left: 4px; }
+.e-value b { direction: ltr; }

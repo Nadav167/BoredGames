@@ -45,7 +45,7 @@ const GAMES = [
   { id: 'cheat', name: "צ'יט", ico: '🤥', ready: true, min: 2, max: 10 },
   { id: 'shithead', name: 'שיט-הד', ico: '💩', ready: true, min: 2, max: 8 },
   { id: 'durak', name: 'דוראק', ico: '🂡', ready: true, min: 2, max: 6 },
-  { id: 'eight', name: 'שמונה וחצי', ico: '8½', ready: true, min: 2, max: 8 },
+  { id: 'eight', name: 'שמונה וחצי', ico: '8½', ready: true, min: 2, max: 5 },
   { id: 'perudo', name: 'פרודו', ico: '🎰', ready: true, min: 2, max: 10, bots: false },
   { id: 'rummy', name: 'רמי', ico: '🀄', ready: true, min: 2, max: 4 },
   { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈', ready: true, min: 3, max: 12 },
@@ -335,7 +335,7 @@ async function createGame(type, bots, level) {
   if (type === 'checkers') g.settings = { rules: 'il' };
   if (type === 'perudo') g.settings = Pe.DEFAULT_SETTINGS;
   if (type === 'cheat') g.settings = { rule: 'seq' };
-  if (type === 'eight') g.settings = { target: 5 };
+  if (type === 'eight') g.settings = { target: 7 };
   if (type === 'chess') g.settings = { minutes: 0 };
   if (type === 'rummy') g.settings = { turnSec: 0 };
   if (type === 'poker') g.settings = Pk.DEFAULT_SETTINGS;
@@ -346,7 +346,7 @@ async function createGame(type, bots, level) {
     : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
     : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'rummy' ? Rk.newGame(orderOf(players), 0)
     : type === 'poker' ? Pk.newGame(orderOf(players), Pk.DEFAULT_SETTINGS)
-    : type === 'cah' ? Ca.newGame(orderOf(players), Ca.DEFAULT_SETTINGS) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
+    : type === 'cah' ? Ca.newGame(orderOf(players), Ca.DEFAULT_SETTINGS) : type === 'eight' ? Ei.newGame(orderOf(players), { target: 7 }) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -1697,63 +1697,134 @@ function durakTick(g) {
 
 // ---------- 8½ UI ----------
 function eightSettingsHtml(g, isHost) {
-  const t = g.settings?.target || 5;
+  const t = g.settings?.target || 7;
   if (!isHost) return `<div class="card"><div class="muted">משחקים עד</div><p><b>${t} נקודות</b></p></div>`;
   return `<div class="card"><div class="muted" style="margin-bottom:8px">משחקים עד</div>
-    <div class="chips">${[3, 5, 7, 10].map(n => `<button class="chip ${t === n ? 'on' : ''}" data-target="${n}">${n} נקודות</button>`).join('')}</div>
-    <div class="muted" style="font-size:14px">כל סיבוב: מי שהכי קרוב ל-8½ בלי לעבור מקבל נקודה</div></div>`;
+    <div class="chips">${[3, 5, 7, 10].map(n => `<button class="chip ${t === n ? 'on' : ''}" data-target="${n}">${n} נקודות${n === 7 ? ' (רשמי)' : ''}</button>`).join('')}</div>
+    <div class="muted" style="font-size:14px">לפי חוקי המשחק של חיים שפיר · 2–5 שחקנים</div></div>`;
 }
 function bindEightSettings() {
   view.querySelectorAll('[data-target]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { target: +b.dataset.target }));
 }
-const startEight = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Ei.newGame(orderOf(g.players), g.settings?.target || 5) });
+const startEight = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Ei.newGame(orderOf(g.players), { target: g.settings?.target || 7 }) });
 
+const E_COL = ['#7a7a7a', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#00acc1', '#1e88e5', '#5e35b1', '#d81b60', '#6d4c41'];
+function ecard(c, extra = '', attrs = '') {
+  const cls = c.k === 'half' ? 'half' : c.k === 'devil' ? 'devil' : 'num';
+  const inner = c.k === 'half' ? '<b>½</b><small>חצי</small>' : c.k === 'devil' ? '<b>😈</b><small>שד</small>' : `<b style="color:${E_COL[c.n]}">${c.n}</b>${c.n === 0 ? '<small>אפס</small>' : ''}`;
+  return `<div class="ecard ${cls} ${extra}" ${attrs}>${inner}</div>`;
+}
+const eBack = (extra = "", attrs = "") => `<div class="ecard back ${extra}" ${attrs}><b dir="ltr">8½</b></div>`;
+
+let eiSel = [], eiKey = '';
 function renderEight(g) {
   view.classList.add('game-mode');
   const s = Ei.norm(structuredClone(g.state)), isHost = g.host === me.uid;
   const names = p => g.players[p]?.nick || 'שחקן שיצא';
-  const me_ = me.uid, mine = s.hands[me_] || [];
-  const reveal = s.phase === 'reveal';
-  const myTurn = !reveal && s.turn === me_;
-  const tot = Ei.total(mine);
-  const row = p => {
-    const h = s.hands[p], show = reveal || p === me_;
-    const st = s.bust[p] ? '<span class="pill bust">נשרף</span>' : s.stood[p] ? '<span class="pill">עוצר</span>' : (!reveal && s.turn === p ? '<span class="pill turnp">משחק…</span>' : '');
-    const win = reveal && s.roundWinners.includes(p);
-    return `<div class="ei-row ${win ? 'win' : ''} ${!reveal && s.turn === p ? 'turn' : ''}">
-      <div class="ei-name"><b>${esc(names(p))}${p === me_ ? ' (אתה)' : ''}</b><span class="muted">${s.scores[p]} נק׳</span></div>
-      <div class="ei-cards">${h.map((c, i) => i === 0 && !show ? cardBack('tiny-card', '') : pcardHtml(c, 'tiny-card' + (i === 0 && p === me_ && !reveal ? ' hid1' : ''))).join('')}</div>
-      <div class="ei-tot">${show ? `<b>${Ei.fmt(Ei.total(h))}</b>` : (h.length > 1 ? `+${Ei.fmt(Ei.total(h.slice(1)))}` : '')}${win ? ' 🏆' : ''}</div>${st}</div>`;
-  };
-  view.innerHTML = `<div class="table cardtable">
-    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button><div class="grow dir">שמונה וחצי · סיבוב ${s.round} · עד ${s.target}</div></div>
-    <div class="ei-list">${s.order.map(row).join('')}</div>
-    <div class="center" style="gap:12px">
-      ${reveal ? `<div class="status">${s.roundWinners.length ? `🏆 ${s.roundWinners.map(p => esc(names(p))).join(', ')} ${s.roundWinners.length > 1 ? 'מנצחים' : 'מנצח'} בסיבוב` : 'כולם נשרפו – אין נקודה'}</div>
-        ${isHost && !s.winner ? '<button class="btn" id="eiNext">🃏 סיבוב הבא</button>' : ''}`
-      : `<div class="ei-mine">${mine.map((c, i) => pcardHtml(c, 'mid-card' + (i === 0 ? ' hid1' : ''))).join('')}</div>
-        <div class="status">יש לך <b style="font-size:22px">${Ei.fmt(tot)}</b>${myTurn ? '' : ` · התור של ${esc(names(s.turn))}`}</div>
-        ${myTurn ? `<div class="row" style="gap:10px"><button class="btn" id="eiDraw">🃏 עוד קלף</button><button class="btn secondary" id="eiStand">✋ עוצר</button></div>` : ''}
-        <div class="dir">הקלף הראשון שלך מוסתר מהאחרים · J/Q/K = חצי</div>`}
+  const me_ = me.uid, myTurn = s.phase === 'play' && s.turn === me_;
+  const src = Ei.source(s, me_);
+  const key = s.phase + s.turn + s.pile.length + s.hands[me_].length + s.up[me_].length;
+  if (eiKey !== key) { eiKey = key; eiSel = []; }
+  const list = src === 'up' ? s.up[me_] : s.hands[me_];
+  const selCards = eiSel.map(id => list.find(c => c.id === id)).filter(Boolean);
+  const chk = selCards.length ? Ei.check(s, me_, selCards) : null;
+  const plays = myTurn ? Ei.legalPlays(s, me_) : [];
+  const playableIds = new Set(plays.flatMap(m => m.cards.map(c => c.id)));
+  const top = s.pile[s.pile.length - 1];
+  const errTxt = { low: 'נמוך מדי', five: 'על 5 – רק 5 או פחות', zero: 'אפס רק על מספר שלם', half85: 'אסור חצי על 8½', mixed: 'רק קלפים זהים (או 8 עם ½)' };
+
+  let note = '';
+  if (s.pile.length && s.value === 5) note = '✋ הקופה על <b>5</b> – הבא חייב 5 או פחות';
+  else if (s.pile.length && !Number.isInteger(s.value) && s.offender) note = `🚨 ${esc(names(s.offender))} "עבריין" – ${esc(names(Ei.nextP(s, s.offender)))} יכול לתפוס אותו עם ${Math.ceil(s.value)}`;
+  let lastTxt = '';
+  if (s.last) {
+    const n = esc(names(s.last.p));
+    if (s.last.blindFail) lastTxt = `${n} הפך קלף עיוור (${Ei.label(s.last.cards[0])}) ולקח את הקופה 🔥`;
+    else if (s.last.took != null) lastTxt = `${n} לקח את הקופה (${s.last.took} קלפים נשרפו) 🔥`;
+    else if (s.last.police) lastTxt = `👮 ${n} תפס את ${esc(names(s.last.caught))}! הקופה נשרפה אצלו`;
+    else lastTxt = `${n} שם ${s.last.cards.map(c => Ei.label(c)).join(' + ')}${s.last.blind ? ' (עיוור)' : ''}`;
+  }
+  const opp = othersFrom(s.order).map(p => `
+    <div class="opp ${s.turn === p && s.phase === 'play' ? 'turn' : ''}">
+      <div class="n">${esc(names(p))}</div>
+      <div class="c">ביד ${s.hands[p].length} · בנק ${s.bank[p].length} · עיוורים ${s.blind[p].length}</div>
+      <div class="up-row">${s.up[p].map(c => ecard(c, 'tiny')).join('')}</div>
+      <div class="c">🔥 ${s.burned[p]} · ⭐ ${s.scores[p]}</div></div>`).join('');
+
+  view.innerHTML = `<div class="table cardtable e85">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button>
+      <div class="grow dir">שמונה וחצי · משחקון ${s.round} · עד ${s.target}</div><button class="btn small" id="eiHelp">❓</button></div>
+    <div class="opps">${opp}</div>
+    <div class="center" style="gap:8px">
+      <div class="row" style="gap:16px;align-items:center">
+        <div class="pile-stack">${top ? ecard(top, 'big') : '<div class="empty-pile">קופה חדשה<br>כל קלף</div>'}</div>
+        <div class="e-value"><small>ערך הקופה</small><b>${s.pile.length ? Ei.fmt(s.value) : '–'}</b></div>
+      </div>
+      ${note ? `<div class="status">${note}</div>` : ''}
+      <div class="status">${s.phase !== 'play' ? '' : myTurn ? (src === 'blind' ? '<b>התור שלך</b> – הפוך קלף עיוור' : '<b>התור שלך</b>') : `התור של ${esc(names(s.turn))}`}</div>
+      ${lastTxt ? `<div class="dir last-line">${lastTxt}</div>` : ''}
+    </div>
+    <div class="hand-wrap">
+      <div class="row" style="justify-content:center;gap:6px;color:#fff;font-size:13px;margin-bottom:4px">בנק: ${s.bank[me_].length} · 🔥 נשרפו: ${s.burned[me_]} · ⭐ ${s.scores[me_]} נק׳</div>
+      <div class="table-row">${s.blind[me_].map((c, i) => `<div class="slot e-slot">${eBack('mid ' + (myTurn && src === 'blind' ? 'pickable' : ''), `data-blind="${i}"`)}${s.up[me_][i] ? ecard(s.up[me_][i], 'mid on-top ' + (eiSel.includes(s.up[me_][i].id) ? 'chosen ' : '') + (src === 'up' && myTurn && playableIds.has(s.up[me_][i].id) ? 'pickable' : ''), `data-upc="${s.up[me_][i].id}"`) : ''}</div>`).join('')}
+        ${s.up[me_].slice(s.blind[me_].length).map(c => `<div class="slot e-slot">${ecard(c, 'mid ' + (eiSel.includes(c.id) ? 'chosen' : ''), `data-upc="${c.id}"`)}</div>`).join('')}</div>
+      ${myTurn && src !== 'blind' ? `<div class="row" style="justify-content:center;gap:8px;margin:8px 0">
+        <button class="btn" id="eiPlay" ${chk?.ok ? '' : 'disabled'}>${!selCards.length ? 'בחר קלפים' : chk.ok ? (chk.police ? '👮 שוטר!' : `שים → ${Ei.fmt(chk.value)}`) : errTxt[chk.err] || 'לא חוקי'}</button>
+        ${!plays.length && s.pile.length ? '<button class="btn danger" id="eiTake">קח את הקופה 🔥</button>' : ''}</div>` : ''}
+      <div class="hand-title">היד שלך</div>
+      <div class="e-hand">${s.hands[me_].map(c => ecard(c, (eiSel.includes(c.id) ? 'chosen ' : '') + (myTurn && src === 'hands' && !playableIds.has(c.id) ? 'dim' : ''), `data-hc="${c.id}"`)).join('') || '<span class="muted" style="color:#fff">ריקה</span>'}</div>
     </div></div>`;
-  if ($('#eiDraw')) $('#eiDraw').onclick = () => txAct(Ei, st => Ei.draw(st, me_));
-  if ($('#eiStand')) $('#eiStand').onclick = () => txAct(Ei, st => Ei.stand(st, me_));
-  if ($('#eiNext')) $('#eiNext').onclick = () => txAct(Ei, st => Ei.nextRound(st));
+
+  const tx = fn => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = Ei.norm(st); return fn(st) ? undefined : st; })
+    .then(r => { if (!r.committed) toast('הפעולה לא התקבלה'); }).catch(() => toast('שגיאת חיבור'));
+  const pick = id => {
+    if (!myTurn) return;
+    eiSel = eiSel.includes(id) ? eiSel.filter(x => x !== id) : [...eiSel, id];
+    renderEight(curGame);
+  };
+  view.querySelectorAll('[data-hc]').forEach(el => el.onclick = () => { if (src === 'hands') pick(+el.dataset.hc); });
+  view.querySelectorAll('[data-upc]').forEach(el => el.onclick = () => { if (src === 'up') pick(+el.dataset.upc); else if (myTurn) toast('קודם משחקים את הקלפים שביד'); });
+  view.querySelectorAll('[data-blind]').forEach(el => el.onclick = () => { if (myTurn && src === 'blind') tx(st => Ei.flipBlind(st, me_, +el.dataset.blind)); });
+  if ($('#eiPlay')) $('#eiPlay').onclick = () => { const ids = eiSel; eiSel = []; tx(st => Ei.play(st, me_, ids)); };
+  if ($('#eiTake')) $('#eiTake').onclick = () => tx(st => Ei.take(st, me_));
+  $('#eiHelp').onclick = () => modal(`<h3>חוקים בקצרה</h3><div style="text-align:right;line-height:1.7;font-size:15px">
+    • שמים קלף שווה או גבוה מערך הקופה. כמה קלפים זהים = כמו קלף אחד.<br>
+    • 😈 <b>שד</b> – על הכל, הערך לא משתנה.<br>• <b>½</b> – מוסיף חצי (לא על 8½).<br>• <b>0</b> – מאפס, רק על מספר שלם.<br>
+    • קופה על <b>5</b> – הבא חייב 5 או פחות.<br>• מי שמשאיר מספר לא שלם הוא "עבריין": אם הבא אחריו שם את המספר השלם הבא (👮 שוטר) – העבריין לוקח את הקופה.<br>
+    • 8 + ½ ביחד = 8½.<br>• לא יכול לשחק? לוקחים את הקופה – הקלפים "נשרפים" ונספרים לחובתך.<br>
+    • משחקון: מי שנפטר מכל הקלפים +1, הכי מעט קלפים (כולל שרופים) +1, ניצחון נקי +1.</div>
+    <button class="btn block" id="hOk">הבנתי</button>`);
+  if ($('#hOk')) $('#hOk').onclick = closeModal;
   $('#exitBtn').onclick = () => exitDialog(isHost);
-  if (s.winner) winDialog(g, s.winner === me_ ? 'ניצחת!' : `${esc(names(s.winner))} ניצח!`, s.winner === me_ ? '🏆' : '🃏', () => startEight(g));
+  if (s.phase === 'roundEnd' && !$('#modal').dataset.roundShown) {
+    $('#modal').dataset.roundShown = s.round;
+    const r = s.result;
+    modal(`<h3>🏁 ${esc(names(r.winner))} נפטר מכל הקלפים!</h3>
+      <div style="text-align:right">${s.order.map(p => `<div class="stat-row"><span>${esc(names(p))} <span class="muted">(${r.left[p]} קלפים כולל שרופים)</span></span><span class="pill">+${r.points[p]} → ${s.scores[p]}</span></div>`).join('')}</div>
+      ${r.clean ? '<p>✨ ניצחון נקי – נקודת בונוס!</p>' : ''}
+      ${isHost ? '<button class="btn block" id="eiNext">משחקון הבא ▶</button>' : '<p class="muted">המארח יתחיל את המשחקון הבא</p>'}`);
+    if ($('#eiNext')) $('#eiNext').onclick = () => { closeModal(); delete $('#modal').dataset.roundShown; tx(st => Ei.nextRound(st)); };
+  }
+  if (s.phase === 'play' && $('#modal').dataset.roundShown) { delete $('#modal').dataset.roundShown; closeModal(); }
+  if (s.phase === 'over') winDialog(g, s.winner === me_ ? `ניצחת עם ${s.scores[me_]} נקודות!` : `${esc(names(s.winner))} ניצח עם ${s.scores[s.winner]} נקודות!`, s.winner === me_ ? '🏆' : '8½', () => startEight(g));
   else delete $('#modal').dataset.winShown;
 }
 let eiBusy = false;
 function eightTick(g) {
   if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
   const s = Ei.norm(structuredClone(g.state));
-  if (s.winner) { finishMulti(g, [s.winner], s.order); return; }
-  if (eiBusy || s.phase !== 'play' || !g.players[s.turn]?.bot) return;
-  eiBusy = true; const gid = curGid, cur = s.turn, n = s.hands[cur].length;
-  setTimeout(() => txAct(Ei, st => {
-    if (st.turn !== cur || st.hands[cur].length !== n || st.phase !== 'play') return 'x';
-    return Ei.botMove(st, cur) === 'draw' ? Ei.draw(st, cur) : Ei.stand(st, cur);
-  }).finally(() => { eiBusy = false; if (curGid === gid && curGame) eightTick(curGame); }), 1100);
+  if (s.phase === 'over') { finishMulti(g, [s.winner], s.order); return; }
+  if (eiBusy) return;
+  const gid = curGid, stamp = s.phase + s.turn + s.pile.length + s.round + JSON.stringify(s.burned);
+  let job = null, delay = 1300;
+  if (s.phase === 'play' && g.players[s.turn]?.bot) { const cur = s.turn; job = st => { const m = Ei.botMove(st, cur); return m.type === 'play' ? Ei.play(st, cur, m.ids) : m.type === 'flip' ? Ei.flipBlind(st, cur, m.idx) : Ei.take(st, cur); }; }
+  if (!job) return;
+  eiBusy = true;
+  setTimeout(() => runTransaction(ref(db, `games/${gid}/state`), st => {
+    if (!st) return st; st = Ei.norm(st);
+    if (st.phase + st.turn + st.pile.length + st.round + JSON.stringify(st.burned) !== stamp) return;
+    return job(st) ? undefined : st;
+  }).catch(() => {}).finally(() => { eiBusy = false; if (curGid === gid && curGame) eightTick(curGame); }), delay);
 }
 
 // ---------- Chess UI ----------
