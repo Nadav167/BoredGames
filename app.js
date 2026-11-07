@@ -18,6 +18,7 @@ import * as Du from './games/durak.js';
 import * as Ei from './games/eight.js';
 import * as Cs from './games/chess.js';
 import * as Rk from './games/rummikub.js';
+import * as Pk from './games/poker.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -46,7 +47,7 @@ const GAMES = [
   { id: 'rummy', name: 'רמי', ico: '🀄', ready: true, min: 2, max: 4 },
   { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈' },
   { id: 'chess', name: 'שחמט', ico: '♟️', ready: true, min: 2, max: 2, botLevels: true },
-  { id: 'poker', name: 'פוקר', ico: '♠️' },
+  { id: 'poker', name: 'פוקר', ico: '♠️', ready: true, min: 2, max: 8 },
   { id: 'codenames', name: 'שם קוד', ico: '🔤' },
   { id: 'catan', name: 'קטאן', ico: '🏝️' },
   { id: 'hitster', name: 'היטסטר', ico: '🎵' },
@@ -334,9 +335,11 @@ async function createGame(type, bots, level) {
   if (type === 'eight') g.settings = { target: 5 };
   if (type === 'chess') g.settings = { minutes: 0 };
   if (type === 'rummy') g.settings = { turnSec: 0 };
+  if (type === 'poker') g.settings = Pk.DEFAULT_SETTINGS;
   if (bots) { g.status = 'playing'; g.state = type === 'chess' ? startChessState(players, 0) : type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
     : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
-    : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'rummy' ? Rk.newGame(orderOf(players), 0) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
+    : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'rummy' ? Rk.newGame(orderOf(players), 0)
+    : type === 'poker' ? Pk.newGame(orderOf(players), Pk.DEFAULT_SETTINGS) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -364,6 +367,7 @@ function openGame(gid) {
     else if (g.type === 'eight') { renderEight(g); eightTick(g); }
     else if (g.type === 'chess') { renderChess(g); chessTick(g); }
     else if (g.type === 'rummy') { renderRummi(g); rummiTick(g); }
+    else if (g.type === 'poker') { renderPoker(g); pokerTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -393,6 +397,7 @@ function renderLobby(g) {
     ${g.type === 'eight' ? eightSettingsHtml(g, isHost) : ''}
     ${g.type === 'chess' ? chessSettingsHtml(g, isHost) : ''}
     ${g.type === 'rummy' ? rummiSettingsHtml(g, isHost) : ''}
+    ${g.type === 'poker' ? pokerSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -415,6 +420,7 @@ function renderLobby(g) {
     if (g.type === 'eight') bindEightSettings();
     if (g.type === 'chess') bindChessSettings();
     if (g.type === 'rummy') bindRummiSettings();
+    if (g.type === 'poker') bindPokerSettings(g);
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -431,6 +437,7 @@ function renderLobby(g) {
       : g.type === 'eight' ? startEight(g)
       : g.type === 'chess' ? startChess(g)
       : g.type === 'rummy' ? startRummi(g)
+      : g.type === 'poker' ? startPoker(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -2030,6 +2037,125 @@ function rummiTick(g) {
     rkOverdue = setTimeout(() => { if (curGid === gid) tx(st => Rk.draw(st, cur)); }, wait);
     screenOff.push(() => clearTimeout(rkOverdue));
   }
+}
+
+// ---------- Poker UI ----------
+const pkSettings = g => ({ ...Pk.DEFAULT_SETTINGS, ...(g.settings || {}) });
+function pokerSettingsHtml(g, isHost) {
+  const st = pkSettings(g);
+  const growTxt = n => n ? `מוכפלים כל ${n} ידיים` : 'קבועים';
+  if (!isHost) return `<div class="card"><div class="muted">הגדרות</div>
+    <p>${st.chips} צ׳יפים לכל שחקן · בליינדים ${st.sb}/${st.sb * 2} (${growTxt(st.grow)})</p></div>`;
+  const row = (title, key, opts, fmt) => `<div class="muted" style="margin:10px 0 6px">${title}</div>
+    <div class="chips">${opts.map(v => `<button class="chip ${st[key] === v ? 'on' : ''}" data-pk="${key}" data-v="${v}">${fmt(v)}</button>`).join('')}</div>`;
+  return `<div class="card">
+    ${row('צ׳יפים בהתחלה', 'chips', [500, 1000, 2000, 5000], v => v)}
+    ${row('בליינדים', 'sb', [5, 10, 25, 50], v => `${v}/${v * 2}`)}
+    ${row('עליית בליינדים', 'grow', [0, 5, 10, 20], growTxt)}</div>`;
+}
+function bindPokerSettings(g) {
+  view.querySelectorAll('[data-pk]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { ...pkSettings(g), [b.dataset.pk]: +b.dataset.v }));
+}
+const startPoker = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Pk.newGame(orderOf(g.players), pkSettings(g)) });
+
+let pkRaise = 0, pkKey = '';
+function renderPoker(g) {
+  view.classList.add('game-mode');
+  const s = Pk.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const me_ = me.uid, L = Pk.legal(s, me_), potNow = Pk.pot(s);
+  const key = s.handNo + s.phase + s.toAct + s.currentBet;
+  if (pkKey !== key) { pkKey = key; pkRaise = L ? L.minTo : 0; }
+  const sd = s.phase === 'showdown' || s.phase === 'over';
+  const showCards = p => sd && s.result && !s.result.uncontested && Pk.inHand(s).includes(p);
+  const tag = p => [s.order[s.dealer] === p ? '<span class="pk-tag d">D</span>' : '', s.sbP === p ? '<span class="pk-tag">SB</span>' : '', s.bbP === p ? '<span class="pk-tag">BB</span>' : ''].join('');
+  const seat = p => {
+    const out = !s.chips[p] && !s.hole[p].length;
+    const st = s.folded[p] ? 'קיפל' : (s.hole[p].length && s.chips[p] === 0 && !sd ? 'אול-אין' : '');
+    const win = sd && s.result?.winners.includes(p);
+    return `<div class="pk-seat ${s.toAct === p ? 'turn' : ''} ${s.folded[p] || out ? 'folded' : ''} ${win ? 'win' : ''}">
+      <div class="n">${tag(p)}${esc(names(p))}</div>
+      <div class="pk-hole">${s.hole[p].length ? (showCards(p) ? s.hole[p].map(c => pcardHtml(c, 'tiny-card')).join('') : cardBack('tiny-card', '') + cardBack('tiny-card', '')) : ''}</div>
+      <div class="c">${out ? 'בחוץ' : `💰 ${s.chips[p]}`}${st ? ` · ${st}` : ''}</div>
+      ${s.bets[p] && !sd ? `<div class="pk-bet">${s.bets[p]}</div>` : ''}
+      ${showCards(p) && s.result.shown?.[p] != null ? `<div class="c">${Pk.HAND_NAMES[s.result.shown[p]]}</div>` : ''}
+      ${win && s.result.won ? `<div class="c" style="color:#ffd84d">+${s.result.won[p]}</div>` : ''}</div>`;
+  };
+  let banner = '';
+  if (s.phase === 'over') banner = `🏆 ${esc(names(s.winner))} לקח את כל הצ׳יפים!`;
+  else if (sd && s.result) banner = s.result.uncontested ? `${esc(names(s.result.winners[0]))} לוקח ${s.result.amount} (כולם קיפלו)`
+    : `🏆 ${s.result.winners.map(p => `${esc(names(p))} (${Pk.HAND_NAMES[s.result.shown[p]]})`).join(', ')}`;
+  else if (L) banner = '<b>התור שלך</b>';
+  else if (s.toAct) banner = `התור של ${esc(names(s.toAct))}`;
+
+  const myIn = s.hole[me_]?.length;
+  const myHand = myIn && s.board.length >= 3 ? Pk.HAND_NAMES[Pk.bestHand([...s.hole[me_], ...s.board]).cat] : '';
+  view.innerHTML = `<div class="table pk-t">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button>
+      <div class="grow dir">פוקר · יד ${s.handNo} · בליינדים ${s.sb}/${s.bb}</div></div>
+    <div class="pk-seats">${othersFrom(s.order).map(seat).join('')}</div>
+    <div class="center" style="gap:8px;flex:0;padding:10px 0">
+      <div class="pk-board">${[0, 1, 2, 3, 4].map(i => s.board[i] ? pcardHtml(s.board[i], 'mid-card') : '<div class="pk-slot"></div>').join('')}</div>
+      <div class="pk-pot">קופה: <b>${sd && s.result ? s.result.amount : potNow}</b></div>
+      <div class="status">${banner}</div>
+    </div>
+    <div class="hand-wrap pk-me ${s.toAct === me_ ? 'turn' : ''}">
+      <div class="row" style="justify-content:center;gap:14px;align-items:center">
+        <div class="pk-mycards">${myIn ? s.hole[me_].map(c => pcardHtml(c, 'mid-card')).join('') : '<span class="muted" style="color:#fff">לא ביד</span>'}</div>
+        <div><div>${tag(me_)} <b>${esc(names(me_))}</b></div><div>💰 ${s.chips[me_]}</div>
+          ${s.bets[me_] && !sd ? `<div class="muted" style="color:#fff">הימור: ${s.bets[me_]}</div>` : ''}${myHand ? `<div style="color:#ffd84d">${myHand}</div>` : ''}</div>
+      </div>
+      ${L ? `<div class="pk-actions">
+        <div class="row" style="gap:6px;justify-content:center">
+          <button class="btn danger" id="pkFold">קפל</button>
+          ${L.canCheck ? '<button class="btn secondary" id="pkCheck">צ׳ק</button>' : `<button class="btn ok" id="pkCall">השווה ${L.toCall}${L.toCall >= s.chips[me_] ? ' (אול-אין)' : ''}</button>`}
+          ${L.canRaise ? `<button class="btn" id="pkRaise">${s.currentBet ? 'העלה ל' : 'הימר '}${pkRaise}</button>` : ''}
+        </div>
+        ${L.canRaise && L.maxTo > L.minTo ? `<input type="range" id="pkSlider" min="${L.minTo}" max="${L.maxTo}" step="${s.sb}" value="${pkRaise}">
+          <div class="row" style="gap:6px;justify-content:center">
+            <button class="btn small secondary" data-amt="${Math.min(L.maxTo, Math.max(L.minTo, s.currentBet + Math.round(potNow / 2)))}">½ קופה</button>
+            <button class="btn small secondary" data-amt="${Math.min(L.maxTo, Math.max(L.minTo, s.currentBet + potNow))}">קופה</button>
+            <button class="btn small secondary" data-amt="${L.maxTo}">אול-אין</button></div>` : ''}
+      </div>` : ''}
+      ${sd && s.phase !== 'over' && isHost ? '<div style="text-align:center;margin-top:8px"><button class="btn" id="pkNext">🃏 יד הבאה</button></div>' : ''}
+    </div></div>`;
+
+  const tx = fn => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = Pk.norm(st); return fn(st) ? undefined : st; })
+    .then(r => { if (!r.committed) toast('הפעולה לא התקבלה'); }).catch(() => toast('שגיאת חיבור'));
+  if ($('#pkFold')) $('#pkFold').onclick = () => tx(st => Pk.act(st, me_, 'fold'));
+  if ($('#pkCheck')) $('#pkCheck').onclick = () => tx(st => Pk.act(st, me_, 'check'));
+  if ($('#pkCall')) $('#pkCall').onclick = () => tx(st => Pk.act(st, me_, 'call'));
+  if ($('#pkRaise')) $('#pkRaise').onclick = () => { const a = pkRaise; tx(st => Pk.act(st, me_, 'raise', a)); };
+  if ($('#pkSlider')) $('#pkSlider').oninput = e => { pkRaise = +e.target.value; $('#pkRaise').textContent = `${s.currentBet ? 'העלה ל' : 'הימר '}${pkRaise}`; };
+  view.querySelectorAll('[data-amt]').forEach(b => b.onclick = () => { pkRaise = +b.dataset.amt; renderPoker(curGame); });
+  if ($('#pkNext')) $('#pkNext').onclick = () => tx(st => Pk.nextHand(st));
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if (s.phase === 'over') winDialog(g, s.winner === me_ ? 'ניצחת! כל הצ׳יפים שלך 💰' : `${esc(names(s.winner))} ניצח!`, s.winner === me_ ? '🏆' : '♠️', () => startPoker(g));
+  else delete $('#modal').dataset.winShown;
+}
+let pkBusy = false, pkAuto = null;
+function pokerTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Pk.norm(structuredClone(g.state));
+  clearTimeout(pkAuto);
+  if (s.phase === 'over') { finishMulti(g, [s.winner], s.order); return; }
+  const gid = curGid, stamp = s.handNo + s.phase + s.toAct + s.currentBet + JSON.stringify(s.log.length);
+  const tx = fn => runTransaction(ref(db, `games/${gid}/state`), st => {
+    if (!st) return st; st = Pk.norm(st);
+    if (st.handNo + st.phase + st.toAct + st.currentBet + JSON.stringify(st.log.length) !== stamp) return;
+    return fn(st) ? undefined : st;
+  }).catch(() => {});
+  if (s.phase === 'showdown') {      // next hand starts by itself after a few seconds
+    pkAuto = setTimeout(() => { if (curGid === gid) tx(st => Pk.nextHand(st)); }, s.over ? 2500 : 7000);
+    screenOff.push(() => clearTimeout(pkAuto));
+    return;
+  }
+  if (!g.players[s.toAct]?.bot || pkBusy) return;
+  pkBusy = true; const cur = s.toAct;
+  setTimeout(() => {
+    const m = Pk.botMove(s, cur);
+    tx(st => m ? Pk.act(st, cur, m.type, m.amount) : 'x').finally(() => { pkBusy = false; if (curGid === gid && curGame) pokerTick(curGame); });
+  }, 1100);
 }
 
 // ---------- friends ----------
