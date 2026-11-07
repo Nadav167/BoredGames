@@ -557,3 +557,6 @@ html[data-theme="dark"] .cah-white .ans { color: #5b3fd6; }
 .chip-btn { width: 56px; height: 56px; border-radius: 50%; border: 4px dashed rgba(255,255,255,.75); color: #fff; font-weight: 900; font-family: inherit; font-size: 14px; }
 .chip-btn.c1 { background: #d84a4a; } .chip-btn.c5 { background: #1e78e0; } .chip-btn.c25 { background: #2e9e4f; }
 .bj-tot b { font-size: 1.25em; } .bj-betlbl { opacity: .8; margin-inline-start: 4px; }
+.near-pick { display: flex; gap: 10px; justify-content: center; }
+.near-btn { width: 64px; height: 52px; border-radius: 14px; border: 2px solid rgba(255,255,255,.5); background: rgba(255,255,255,.12); color: #fff; font-size: 24px; font-weight: 900; font-family: inherit; }
+.near-btn.on { background: #ffd84d; color: #222; border-color: #ffd84d; }

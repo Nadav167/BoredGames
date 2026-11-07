@@ -336,7 +336,7 @@ async function createGame(type, bots, level) {
   if (type === 'imposter') g.settings = Imp.DEFAULT_SETTINGS;
   if (type === 'checkers') g.settings = { rules: 'il' };
   if (type === 'perudo') g.settings = Pe.DEFAULT_SETTINGS;
-  if (type === 'cheat') g.settings = { rule: 'seq' };
+  if (type === 'cheat') g.settings = { rule: 'near' };
   if (type === 'eight') g.settings = { target: 7 };
   if (type === 'chess') g.settings = { minutes: 0 };
   if (type === 'rummy') g.settings = { turnSec: 0 };
@@ -346,7 +346,7 @@ async function createGame(type, bots, level) {
   if (type === 'blackjack') g.settings = Bj.DEFAULT_SETTINGS;
   if (type === 'codenames') g.settings = { lang: 'he', teams: { [me.uid]: 'r' }, spy: {} };
   if (bots) { g.status = 'playing'; g.state = type === 'chess' ? startChessState(players, 0) : type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
-    : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
+    : type === 'cheat' ? Ch.newGame(orderOf(players), 'near') : type === 'shithead' ? Sh.newGame(orderOf(players))
     : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'rummy' ? Rk.newGame(orderOf(players), 0)
     : type === 'poker' ? Pk.newGame(orderOf(players), Pk.DEFAULT_SETTINGS)
     : type === 'cah' ? Ca.newGame(orderOf(players), Ca.DEFAULT_SETTINGS)
@@ -1331,7 +1331,7 @@ function pcardHtml(c, extra = '', attrs = '') {
     <span class="ix ix1">${R}<br>${c.s}</span><div class="face"><span class="suit">${c.s}</span><span class="rk">${R}</span></div><span class="ix ix2">${R}<br>${c.s}</span></div>`;
 }
 function cheatSettingsHtml(g, isHost) {
-  const r = g.settings?.rule || 'seq';
+  const r = g.settings?.rule || 'near';
   if (!isHost) return `<div class="card"><div class="muted">חוקים</div><p><b>${Ch.RULES[r]}</b><br><span class="muted">${Ch.RULES_INFO[r]}</span></p></div>`;
   return `<div class="card"><div class="muted" style="margin-bottom:8px">חוקים</div>
     <div class="chips">${Object.entries(Ch.RULES).map(([k, n]) => `<button class="chip ${r === k ? 'on' : ''}" data-chrule="${k}">${n}</button>`).join('')}</div>
@@ -1340,7 +1340,7 @@ function cheatSettingsHtml(g, isHost) {
 function bindCheatSettings() {
   view.querySelectorAll('[data-chrule]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { rule: b.dataset.chrule }));
 }
-const startCheat = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Ch.newGame(orderOf(g.players), g.settings?.rule || 'seq') });
+const startCheat = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Ch.newGame(orderOf(g.players), g.settings?.rule || 'near') });
 
 let chSel = [], chClaim = 0, chKey = '';
 function renderCheat(g) {
@@ -1351,14 +1351,16 @@ function renderCheat(g) {
   const myTurn = !s.winner && s.turn === me.uid;
   const key = s.turn + ':' + s.pile.length + ':' + hand.length;
   if (chKey !== key) { chKey = key; chSel = chSel.filter(id => hand.some(c => c.id === id)); if (!myTurn) chClaim = 0; }
-  const pick = Ch.mustPickRank(s);
-  const claim = pick ? chClaim : s.rank;
+  const pick = Ch.mustPickRank(s), near = s.rule === 'near' && !pick;
+  const opts = Ch.claimOptions(s);
+  const claim = pick || near ? (opts.includes(chClaim) ? chClaim : 0) : s.rank;
   const others = (() => { const i = s.order.indexOf(me.uid); return [...s.order.slice(i + 1), ...s.order.slice(0, i)]; })();
   const R = r => Ch.RANKS[r];
 
   let info;
   if (s.winner) info = `🏆 <b>${esc(names(s.winner))}</b> ניצח!`;
   else if (pick) info = `${s.turn === me.uid ? 'אתה פותח' : esc(names(s.turn)) + ' פותח'} ערימה חדשה ובוחר דרגה`;
+  else if (s.rule === 'near') info = `על הערימה: <b class="rank-big">${R(s.rank)}</b> · אפשר להגיד ${opts.map(R).join(' / ')}`;
   else info = `הדרגה עכשיו: <b class="rank-big">${R(s.rank)}</b>`;
   let lastTxt = '';
   if (s.last && !s.last.called) lastTxt = `${esc(names(s.last.by))} שם <b>${s.last.n}</b> ${s.last.n === 1 ? 'קלף' : 'קלפים'} כ-<b>${R(s.last.claim)}</b>${s.pendingWin === s.last.by ? ' · זה הקלף האחרון שלו!' : ''}`;
@@ -1389,6 +1391,7 @@ function renderCheat(g) {
       </div>
       <div class="hand-wrap">
         ${myTurn ? `<div class="ch-actions">
+          ${near ? `<div class="near-pick">${opts.map(r => `<button class="near-btn ${chClaim === r ? 'on' : ''}" data-claim="${r}">${R(r)}</button>`).join('')}</div>` : ''}
           ${pick ? `<div class="rank-pick">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(r => `<button class="chip ${chClaim === r ? 'on' : ''}" data-claim="${r}">${R(r)}</button>`).join('')}</div>` : ''}
           <div class="row" style="justify-content:center">
             <button class="btn" id="playBtn" ${chSel.length && claim ? '' : 'disabled'}>${chSel.length ? `שים ${chSel.length} כ-${claim ? R(claim) : '?'}` : 'בחר 1–4 קלפים'}</button>

@@ -1,6 +1,7 @@
 // BoredGames – Cheat (צ'יט) engine
 // Cards are dealt face down; players put 1–4 cards on the pile and claim they're all of one rank.
 // rule 'seq'  – ranks go up in order (A, 2, 3 … K, A …); you must play every turn.
+// rule 'near' – claim the last claimed rank, one above or one below (K and A wrap around); a fresh pile: any rank.
 // rule 'free' – whoever starts a pile picks the rank; others must claim the same rank or pass.
 //               If everyone passes back to the last player, the pile is discarded and they start a new one.
 // Anyone can call "Cheat!" on the last play: a liar takes the whole pile, otherwise the caller does.
@@ -8,15 +9,16 @@
 
 export const RANKS = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 export const SUITS = ['♠', '♥', '♦', '♣'];
-export const RULES = { seq: 'סדר עולה (A, 2, 3…)', free: 'דרגה חופשית' };
+export const RULES = { near: 'אותו מספר, אחד מעל או אחד מתחת', seq: 'סדר עולה (A, 2, 3…)', free: 'דרגה חופשית' };
 export const RULES_INFO = {
+  near: 'אחרי X אפשר להגיד X−1, X או X+1 (K ו-A מתחברים). בערימה חדשה – כל מספר. חייבים לשים בכל תור',
   seq: 'כל תור הדרגה עולה באחת. חייבים לשים קלפים בכל תור',
   free: 'מי שפותח ערימה בוחר דרגה, והשאר ממשיכים באותה דרגה או אומרים פס',
 };
 
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
-export function newGame(order, rule = 'seq') {
+export function newGame(order, rule = 'near') {
   const decks = order.length > 5 ? 2 : 1, deck = []; let id = 0;
   for (let d = 0; d < decks; d++) for (let r = 1; r <= 13; r++) for (const s of SUITS) deck.push({ id: id++, r, s });
   shuffle(deck);
@@ -37,7 +39,14 @@ export function norm(s) {
 }
 
 export const nextP = (s, p) => s.order[(s.order.indexOf(p) + 1) % s.order.length];
-export const mustPickRank = s => s.rule === 'free' && !s.pile.length;
+export const mustPickRank = s => (s.rule === 'free' || s.rule === 'near') && !s.pile.length;
+const wrap = r => ((r - 1 + 13) % 13) + 1;
+// ranks a player may announce now
+export function claimOptions(s) {
+  if (mustPickRank(s)) return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+  if (s.rule === 'near') return [wrap(s.rank - 1), s.rank, wrap(s.rank + 1)];
+  return [s.rank];
+}
 export const canCall = (s, p) => !s.winner && s.last && !s.last.called && s.last.by !== p;
 
 function settleWin(s) { if (s.pendingWin) { s.winner = s.pendingWin; return true; } return false; }
@@ -48,7 +57,7 @@ export function play(s, p, ids, claim) {
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > 4) return 'count';
   const hand = s.hands[p];
   if (!ids.every(id => hand.some(c => c.id === id)) || new Set(ids).size !== ids.length) return 'cards';
-  if (mustPickRank(s)) { if (!(claim >= 1 && claim <= 13)) return 'rank'; s.rank = claim; }
+  if (mustPickRank(s) || s.rule === 'near') { if (!claimOptions(s).includes(claim)) return 'rank'; s.rank = claim; }
   if (settleWin(s)) return null;                       // the previous player emptied their hand and nobody called
   const cards = ids.map(id => hand.find(c => c.id === id));
   s.hands[p] = hand.filter(c => !ids.includes(c.id));
@@ -85,7 +94,7 @@ export function call(s, p) {
   s.reveal = { caller: p, by: L.by, cards, liar, picker, claim: L.claim };
   if (s.pendingWin === L.by && !liar) s.winner = L.by;
   s.pendingWin = '';
-  if (s.rule === 'free') { s.rank = 0; s.last = null; s.passes = 0; }   // next player starts a fresh pile
+  if (s.rule === 'free' || s.rule === 'near') { s.rank = 0; s.last = null; s.passes = 0; }   // next player starts a fresh pile
   return null;
 }
 
@@ -97,6 +106,17 @@ export function botTurn(s, p) {
     const counts = {}; for (const c of hand) counts[c.r] = (counts[c.r] || 0) + 1;
     const r = +Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
     return { type: 'play', ids: byRank(r).slice(0, 4).map(c => c.id), claim: r };
+  }
+  if (s.rule === 'near') {
+    // pick the allowed rank I hold most of; with none, lie using a card far from the current rank
+    const opts = claimOptions(s), best = opts.map(r => [r, byRank(r)]).sort((a, b) => b[1].length - a[1].length)[0];
+    if (best[1].length) {
+      const ids = best[1].slice(0, 4).map(c => c.id);
+      if (ids.length < 4 && hand.length > 6 && Math.random() < 0.25) { const extra = hand.find(c => !opts.includes(c.r)); if (extra) ids.push(extra.id); }
+      return { type: 'play', ids, claim: best[0] };
+    }
+    const far = [...hand].sort((a, b) => Math.min(Math.abs(b.r - s.rank), 13 - Math.abs(b.r - s.rank)) - Math.min(Math.abs(a.r - s.rank), 13 - Math.abs(a.r - s.rank)));
+    return { type: 'play', ids: far.slice(0, hand.length > 8 && Math.random() < 0.35 ? 2 : 1).map(c => c.id), claim: opts[Math.floor(Math.random() * 3)] };
   }
   const real = byRank(s.rank);
   if (real.length) {
