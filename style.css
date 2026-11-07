@@ -560,3 +560,111 @@ html[data-theme="dark"] .cah-white .ans { color: #5b3fd6; }
 .near-pick { display: flex; gap: 10px; justify-content: center; }
 .near-btn { width: 64px; height: 52px; border-radius: 14px; border: 2px solid rgba(255,255,255,.5); background: rgba(255,255,255,.12); color: #fff; font-size: 24px; font-weight: 900; font-family: inherit; }
 .near-btn.on { background: #ffd84d; color: #222; border-color: #ffd84d; }
+
+/* ===== In a game: the page is exactly one screen tall and never scrolls ===== */
+body.in-game { height: 100vh; height: 100dvh; overflow: hidden; }
+body.in-game main { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 8px 12px; }
+body.in-game main.game-mode { padding: 0; }
+body.in-game .table { flex: 1 1 auto; min-height: 0; height: auto; overflow: hidden; }
+body.in-game #invites { position: absolute; left: 0; right: 0; top: calc(62px + env(safe-area-inset-top)); z-index: 25; }
+body.in-game .topbar { display: none; }
+body.in-game #invites { top: env(safe-area-inset-top); }
+body.in-game main { padding-top: calc(8px + env(safe-area-inset-top)); }
+body.in-game main.game-mode { padding-top: env(safe-area-inset-top); }
+body.in-game .table > * { flex-shrink: 0; }
+body.in-game .table > .center, body.in-game .table > .pe-main { flex: 1 0 auto; }
+body.in-game .opps { overflow: visible; }
+
+/* ===== compact layout while a game is in progress ===== */
+body.in-game .game-top { padding: 4px 10px; }
+body.in-game .game-top .btn.small { padding: 5px 10px; }
+body.in-game .opps { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 4px; padding: 6px 8px; }
+body.in-game .opp { min-width: 0; padding: 4px 5px; border-radius: 10px; }
+body.in-game .opp .n { font-size: 12px; max-width: none; }
+body.in-game .opp .c { font-size: 11px; }
+body.in-game .opps .mini-cards { display: none; }
+body.in-game .up-row { margin-top: 2px; }
+body.in-game .center { gap: 6px; padding: 4px 8px; justify-content: space-evenly; }
+body.in-game .status { padding: 4px 12px; font-size: 14px; min-height: 0; }
+body.in-game .dir { font-size: 13px; }
+body.in-game .tk.topcard, body.in-game .pile-stack .tk, body.in-game .deck-btn .tk { --w: 62px; }
+body.in-game .empty-pile { width: 62px; height: 90px; font-size: 11px; }
+body.in-game .piles { gap: 14px; }
+body.in-game .hand-wrap { padding: 4px 0 8px; }
+body.in-game .hand-title { font-size: 12px; margin: 0; }
+body.in-game .ch-actions { padding: 2px 8px; gap: 4px; }
+body.in-game .table-row { gap: 6px; padding: 2px 8px; }
+body.in-game .slot { width: 48px; height: 84px; }
+body.in-game .slot .tk, body.in-game .table-row .mid-card { --w: 46px; }
+body.in-game .slot .tk.on-top { top: 14px; }
+body.in-game .e-slot { width: 48px; height: 86px; }
+body.in-game .e-slot .ecard { --w: 44px; } body.in-game .e-slot .ecard.on-top { top: 20px; }
+body.in-game .e-hand .ecard { --w: 52px; }
+body.in-game .ecard.big { --w: 60px; }
+body.in-game .e-value b { font-size: 36px; }
+body.in-game .reveal-box { padding: 6px 10px; gap: 3px; }
+body.in-game .cheat-btn { font-size: 17px; padding: 8px 22px; }
+body.in-game .near-btn { height: 44px; }
+body.in-game .rank-pick .chip { padding: 3px 7px; min-width: 32px; font-size: 13px; }
+body.in-game .du-table { gap: 8px 12px; min-height: 0; }
+body.in-game .du-pair { width: 56px; height: 86px; }
+body.in-game .du-pair .tk { --w: 46px; } body.in-game .du-pair .tk.def { top: 12px; left: 10px; }
+body.in-game .deck-trump { width: 84px; height: 70px; } body.in-game .deck-trump .tk { --w: 46px; }
+
+/* Rummikub: no inner scrolling, smaller tiles */
+body.in-game .rk-table { max-height: none; overflow: visible; gap: 6px; padding: 6px; }
+body.in-game .rtile { width: 27px; height: 37px; font-size: 16px; }
+body.in-game .rk-set { padding: 3px; min-height: 0; }
+/* Perudo */
+body.in-game .pe-main { gap: 6px; padding: 0 8px 8px; }
+body.in-game .pe-card { padding: 10px; }
+body.in-game .reveal-row { padding: 3px 0; gap: 4px; }
+body.in-game .reveal-row .die.pdie.mini { width: 24px; height: 24px; padding: 2px; }
+body.in-game .my-dice { padding: 10px; min-height: 0; }
+body.in-game .die.pdie { width: 42px; height: 42px; }
+/* Poker */
+body.in-game .pk-seats { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 5px; padding: 6px; }
+body.in-game .pk-seat { padding: 4px; }
+body.in-game .pk-hole { min-height: 0; margin: 2px 0; }
+body.in-game .pk-slot, body.in-game .pk-board .tk { --w: 48px; width: 48px; height: 70px; }
+body.in-game .pk-mycards .mid-card { --w: 56px; }
+/* Blackjack */
+body.in-game .bj-dealer { padding: 4px; gap: 3px; }
+body.in-game .bj-dealer .tk, body.in-game .bj-mine .tk { --w: 50px; }
+/* screens outside the green table */
+body.in-game .cn-grid { gap: 4px; }
+body.in-game .cn-banner { padding: 6px; margin-bottom: 6px; font-size: 15px; }
+body.in-game .vote-row { padding: 8px 6px; font-size: 15px; }
+body.in-game .cah-black { padding: 12px 14px; font-size: 18px; margin-bottom: 8px; }
+body.in-game .cah-hand { gap: 6px; padding-bottom: 0; }
+body.in-game .cah-subs { gap: 6px; padding-bottom: 0; }
+body.in-game .cah-white { padding: 8px 10px; font-size: 14px; min-height: 0; }
+body.in-game .cah-white.big { font-size: 15px; }
+body.in-game .sticky-btn { position: static; margin-top: 8px; }
+body.in-game .status-card { padding: 12px; font-size: 16px; }
+body.in-game .secret { min-height: 170px; margin-bottom: 8px; }
+/* Hitster compact timeline */
+.hi-line { flex-direction: row; flex-wrap: wrap; gap: 4px; direction: ltr; padding-bottom: 0; align-items: stretch; justify-content: center; }
+.hi-card { width: 96px; display: flex; flex-direction: column; padding: 6px 7px; gap: 1px; border-radius: 10px; }
+.hi-card b { font-size: 19px; grid-row: auto; }
+.hi-card span { font-size: 11px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hi-card small { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hi-slot { width: 30px; padding: 0; font-size: 20px; }
+.hi-reveal { padding: 10px; } .hi-year { font-size: 36px; }
+/* Imposter vote grid */
+.vote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 8px; }
+.vote-grid .vote-row { border-bottom: 0; background: var(--surface2); padding: 8px; font-size: 15px; }
+.vote-grid .vote-row .avatar { width: 28px; height: 28px; font-size: 13px; }
+.vote-grid .vote-row .pill { font-size: 11px; padding: 2px 6px; }
+/* Codenames compact teams */
+.cn-line { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
+.cn-team { padding: 3px 10px; border-radius: 10px; color: #fff; }
+.cn-team.r { background: #c0392b; } .cn-team.b { background: #1e6fd0; }
+body.in-game .cn-cluebox { margin-top: 8px; padding: 10px; }
+body.in-game .cn-cluebox .chips { gap: 4px; margin: 6px 0 !important; }
+body.in-game .cn-cluebox .chip { padding: 4px 9px; font-size: 14px; }
+body.in-game .cn-hintbox { margin-top: 6px; padding: 6px 8px; font-size: 14px; }
+body.in-game .hand-wrap { overflow: visible; }
+body.in-game .opp .tiny-card { --w: 20px; }
+body.in-game .opp .ecard.tiny { --w: 19px; }
+body.in-game .opp .up-row { gap: 1px; }

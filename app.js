@@ -95,13 +95,37 @@ let screenOff = [];
 let current = 'home';
 let curGid = null, curGame = null;
 
-function clearScreen() { screenOff.forEach(f => f()); screenOff = []; curGid = null; curGame = null; view.classList.remove('game-mode'); }
+function clearScreen() { screenOff.forEach(f => f()); screenOff = []; curGid = null; curGame = null; view.classList.remove('game-mode'); document.body.classList.remove('in-game'); }
 function go(name, arg) {
   clearScreen(); current = name;
   drawer.querySelectorAll('[data-nav]').forEach(b => b.classList.toggle('active', b.dataset.nav === name));
   ({ home: showHome, friends: showFriends, stats: showStats, about: showAbout, game: openGame }[name] || showHome)(arg);
   window.scrollTo(0, 0);
 }
+
+// ---------- fit a game to the screen ----------
+// During a game the page never scrolls. After every render we measure the content and, if it is taller (or wider)
+// than the screen, zoom the game out just enough to fit.
+let fitQueued = false;
+function fitGame() {
+  fitQueued = false;
+  if (!document.body.classList.contains('in-game')) { view.style.zoom = ''; return; }
+  for (let i = 0; i < 3; i++) {
+    const z = parseFloat(view.style.zoom) || 1;
+    const inner = view.querySelector(':scope > .table');
+    const needH = (inner ? inner.scrollHeight : view.scrollHeight) * z, needW = (inner ? inner.scrollWidth : view.scrollWidth) * z;
+    const availH = view.clientHeight * z, availW = view.clientWidth * z;
+    const ratio = Math.min(availH / needH, availW / needW);
+    if (ratio >= 1 && z === 1) break;                                   // already fits
+    const next = Math.max(0.5, Math.min(1, z * ratio * (ratio < 1 ? 0.99 : 1)));
+    if (Math.abs(next - z) < 0.002) break;
+    view.style.zoom = next;
+    layoutFan();
+  }
+}
+const queueFit = () => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(() => { view.style.zoom = ''; layoutFan(); fitGame(); }); } };
+new MutationObserver(queueFit).observe(view, { childList: true, subtree: true });
+window.addEventListener('resize', queueFit);
 
 // ---------- auth & nickname ----------
 const gProvider = new GoogleAuthProvider();
@@ -367,6 +391,7 @@ function openGame(gid) {
     if (!g) { toast('המשחק נסגר'); set(ref(db, `users/${me.uid}/activeGame`), null); go('home'); return; }
     if (!g.players?.[me.uid]) { toast('יצאת מהמשחק'); go('home'); return; }
     curGame = g;
+    document.body.classList.toggle('in-game', g.status !== 'lobby');   // a game in progress always fits the screen
     if (g.status === 'lobby') renderLobby(g);
     else if (g.type === 'imposter') renderImposter(g);
     else if (g.type === 'checkers') { renderCheckers(g); checkersTick(g); }
@@ -514,7 +539,7 @@ function layoutFan() {
   const fan = $('.fan'); if (!fan) return;
   const cards = [...fan.children], n = cards.length;
   const W = fan.getBoundingClientRect().width || view.clientWidth - 16;
-  const cw = n > 16 ? 54 : n > 10 ? 60 : 68, ch = cw * 1.46;
+  const cw = n > 16 ? 50 : n > 10 ? 56 : 62, ch = cw * 1.46;
   const total = Math.min(5 * (n - 1), 44);
   const sway = cw * 1.46 * Math.sin(total / 2 * Math.PI / 180); // rotated corners stick out
   const spacing = n > 1 ? Math.min(cw * 0.7, (W - cw - 1.7 * sway - 12) / (n - 1)) : 0;
@@ -756,7 +781,7 @@ function renderImposter(g) {
     body = `
       <h1>🗳️ מי המתחזה?</h1>
       <p class="muted">${imps.length > 1 ? `יש ${imps.length} מתחזים. ` : ''}לחץ על מי שאתה חושד בו. אפשר לשנות עד שההצבעה נסגרת.</p>
-      <div class="card">${order.filter(p => p !== me.uid).map(p => `
+      <div class="card vote-grid">${order.filter(p => p !== me.uid).map(p => `
         <button class="vote-row ${votes[me.uid] === p ? 'on' : ''}" data-vote="${p}">
           <div class="avatar">${esc(names(p)[0])}</div><div class="grow">${esc(names(p))}</div>
           ${votes[p] ? '<span class="pill">הצביע ✓</span>' : ''}</button>`).join('')}</div>
@@ -2344,8 +2369,7 @@ function renderCodenames(g) {
           <button class="btn small" id="cnUse">השתמש</button><button class="btn small secondary" id="cnMore">עוד</button></div>` : ''}
         <div class="chips" style="margin:10px 0">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(n => `<button class="chip ${cnNum === n ? 'on' : ''}" data-num="${n}">${n === 0 ? '∞' : n}</button>`).join('')}</div>
         <button class="btn block" id="cnSend">שלח רמז</button></div>` : ''}
-    <div class="cn-teams" style="margin-top:12px">${['r', 'b'].map(t => `<div class="cn-col ${t}"><b>${Cn.TEAM_HE[t]}</b>
-      ${team(t).map(p => `<div class="cn-mem">${s.spy[t] === p ? '🕵️ ' : ''}${esc(names(p))}</div>`).join('')}</div>`).join('')}</div>`;
+    <div class="cn-line">${['r', 'b'].map(t => `<span class="cn-team ${t}">${team(t).map(p => `${s.spy[t] === p ? '🕵️' : ''}${esc(names(p))}`).join(', ')}</span>`).join('')}</div>`;
 
   const tx = fn => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = Cn.norm(st); const e = fn(st); if (e) { cnErr = e; return; } return st; })
     .then(r => { if (!r.committed) toast({ boardword: 'אי אפשר לתת מילה שעל הלוח', oneword: 'רק מילה אחת', notspy: 'רק רב-המרגל נותן רמז' }[cnErr] || 'הפעולה לא התקבלה'); })
@@ -2509,8 +2533,8 @@ function renderHitster(g) {
         <button class="btn secondary block" id="hiGo">${one ? `השיר מתנגן – תעביר ל${esc(names(s.turn))} ←` : 'השיר מתנגן ✓'}</button></div>`
       : `<div class="status-card">🎧 ${esc(names(dj))} (DJ) מנגן שיר…<br><span class="muted">${s.turn === me.uid ? 'תקשיב טוב – תכף תמקם אותו בציר הזמן שלך' : `${esc(names(s.turn))} ימקם אותו`}</span></div>`;
   } else if (s.phase === 'place') {
-    body = iAmTurn ? `<div class="muted" style="margin:6px 0">${one ? `${esc(names(s.turn))}, ` : ''}איפה השיר נכנס בציר הזמן שלך?</div>
-      <div class="hi-line">${line.map((i, k) => `<button class="hi-slot" data-slot="${k}">⬇️ כאן</button>${card(i)}`).join('')}<button class="hi-slot" data-slot="${line.length}">⬇️ כאן</button></div>`
+    body = iAmTurn ? `<div class="muted" style="margin:6px 0">${one ? `${esc(names(s.turn))}, ` : ''}איפה השיר נכנס? לחץ על ＋ במקום הנכון (מוקדם ← משמאל)</div>
+      <div class="hi-line">${line.map((i, k) => `<button class="hi-slot" data-slot="${k}">＋</button>${card(i)}`).join('')}<button class="hi-slot" data-slot="${line.length}">＋</button></div>`
       : `<div class="status-card">⏳ ${esc(names(s.turn))} ממקם את השיר…</div>
          <div class="hi-line">${line.map(i => card(i)).join('')}</div>`;
   } else if (s.phase === 'reveal') {
