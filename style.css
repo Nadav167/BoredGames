@@ -449,3 +449,34 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .pk-mycards .mid-card { --w: 66px; }
 .pk-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .pk-actions input[type=range] { width: 100%; accent-color: #ffd84d; }
+
+/* ===== Codenames ===== */
+.cn-teams { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cn-col { border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.cn-col.r { background: rgba(216, 74, 74, .14); border: 2px solid rgba(216, 74, 74, .5); }
+.cn-col.b { background: rgba(30, 120, 224, .14); border: 2px solid rgba(30, 120, 224, .5); }
+.cn-mem { font-size: 15px; }
+.cn-score { font-size: 24px; font-weight: 900; }
+.cn-score.r { color: #d84a4a; } .cn-score.b { color: #1e78e0; }
+.cn-banner { text-align: center; padding: 10px; border-radius: 14px; margin-bottom: 10px; color: #fff; font-size: 16px; }
+.cn-banner.r { background: #c0392b; } .cn-banner.b { background: #1e6fd0; }
+.cn-clue { font-size: 20px; background: rgba(255,255,255,.2); padding: 0 8px; border-radius: 8px; }
+.cn-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.cn-card { aspect-ratio: 1.35; border: 0; border-radius: 9px; background: #efe6d2; color: #2b2416; font-family: inherit; font-weight: 700;
+  font-size: clamp(10px, 3.1vw, 15px); padding: 3px; position: relative; display: grid; place-items: center; line-height: 1.1;
+  box-shadow: 0 2px 0 #c9bc9c, 0 3px 6px rgba(0,0,0,.15); word-break: break-word; }
+.cn-card:not(:disabled) { cursor: pointer; }
+.cn-card:disabled { opacity: 1; }
+.cn-card.k-r { box-shadow: inset 0 0 0 4px #d84a4a, 0 3px 6px rgba(0,0,0,.15); }
+.cn-card.k-b { box-shadow: inset 0 0 0 4px #1e78e0, 0 3px 6px rgba(0,0,0,.15); }
+.cn-card.k-a { box-shadow: inset 0 0 0 4px #111, 0 3px 6px rgba(0,0,0,.15); background: #cfcfcf; }
+.cn-card.rev.k-r { background: #d84a4a; color: #fff; } .cn-card.rev.k-b { background: #1e78e0; color: #fff; }
+.cn-card.rev.k-n { background: #bdb3a0; color: #5e5546; } .cn-card.rev.k-a { background: #111; color: #fff; }
+.cn-card.rev span { opacity: .55; }
+.cn-card i { position: absolute; top: 2px; left: 3px; font-style: normal; font-size: 10px; }
+.cn-card.pick { outline: 4px solid #ffd84d; transform: scale(1.04); }
+.cn-card.hint { outline: 3px dashed #22a06b; }
+.cn-cluebox { margin-top: 12px; }
+.cn-hintbox { margin-top: 10px; padding: 8px 10px; background: var(--surface2); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cn-card { word-break: normal; overflow-wrap: normal; }
+.cn-card span.l { font-size: .82em; } .cn-card span.xl { font-size: .7em; }

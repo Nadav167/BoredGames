@@ -19,6 +19,7 @@ import * as Ei from './games/eight.js';
 import * as Cs from './games/chess.js';
 import * as Rk from './games/rummikub.js';
 import * as Pk from './games/poker.js';
+import * as Cn from './games/codenames.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -48,7 +49,7 @@ const GAMES = [
   { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈' },
   { id: 'chess', name: 'שחמט', ico: '♟️', ready: true, min: 2, max: 2, botLevels: true },
   { id: 'poker', name: 'פוקר', ico: '♠️', ready: true, min: 2, max: 8 },
-  { id: 'codenames', name: 'שם קוד', ico: '🔤' },
+  { id: 'codenames', name: 'שם קוד', ico: '🔤', ready: true, min: 4, max: 16, bots: false },
   { id: 'catan', name: 'קטאן', ico: '🏝️' },
   { id: 'hitster', name: 'היטסטר', ico: '🎵' },
 ];
@@ -336,6 +337,7 @@ async function createGame(type, bots, level) {
   if (type === 'chess') g.settings = { minutes: 0 };
   if (type === 'rummy') g.settings = { turnSec: 0 };
   if (type === 'poker') g.settings = Pk.DEFAULT_SETTINGS;
+  if (type === 'codenames') g.settings = { lang: 'he', teams: { [me.uid]: 'r' }, spy: {} };
   if (bots) { g.status = 'playing'; g.state = type === 'chess' ? startChessState(players, 0) : type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
     : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
     : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'rummy' ? Rk.newGame(orderOf(players), 0)
@@ -368,6 +370,7 @@ function openGame(gid) {
     else if (g.type === 'chess') { renderChess(g); chessTick(g); }
     else if (g.type === 'rummy') { renderRummi(g); rummiTick(g); }
     else if (g.type === 'poker') { renderPoker(g); pokerTick(g); }
+    else if (g.type === 'codenames') renderCodenames(g);
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -398,6 +401,7 @@ function renderLobby(g) {
     ${g.type === 'chess' ? chessSettingsHtml(g, isHost) : ''}
     ${g.type === 'rummy' ? rummiSettingsHtml(g, isHost) : ''}
     ${g.type === 'poker' ? pokerSettingsHtml(g, isHost) : ''}
+    ${g.type === 'codenames' ? codenamesSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -412,6 +416,7 @@ function renderLobby(g) {
     b.disabled = true; b.textContent = 'נשלח ✓';
   });
   view.querySelectorAll('[data-kick]').forEach(b => b.onclick = () => remove(ref(db, `games/${curGid}/players/${b.dataset.kick}`)));
+  if (g.type === 'codenames') bindCodenamesSettings(g);   // everyone picks their own team
   if (isHost) {
     if (g.type === 'imposter') bindImposterSettings(g);
     if (g.type === 'checkers') bindCheckersSettings();
@@ -438,6 +443,7 @@ function renderLobby(g) {
       : g.type === 'chess' ? startChess(g)
       : g.type === 'rummy' ? startRummi(g)
       : g.type === 'poker' ? startPoker(g)
+      : g.type === 'codenames' ? startCodenames(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -2156,6 +2162,121 @@ function pokerTick(g) {
     const m = Pk.botMove(s, cur);
     tx(st => m ? Pk.act(st, cur, m.type, m.amount) : 'x').finally(() => { pkBusy = false; if (curGid === gid && curGame) pokerTick(curGame); });
   }, 1100);
+}
+
+// ---------- Codenames UI ----------
+const cnSet = g => ({ lang: 'he', teams: {}, spy: {}, ...(g.settings || {}) });
+function codenamesSettingsHtml(g, isHost) {
+  const st = cnSet(g), players = orderOf(g.players);
+  const team = t => players.filter(p => st.teams[p] === t);
+  const col = t => `<div class="cn-col ${t}">
+      <b>הקבוצה ${Cn.TEAM_HE[t]}</b>
+      ${team(t).map(p => `<div class="cn-mem">${st.spy[t] === p ? '🕵️ ' : ''}${esc(g.players[p].nick)}${st.spy[t] === p ? ' <small>(רב-מרגל)</small>' : ''}</div>`).join('') || '<div class="muted">אין עדיין</div>'}
+      <button class="btn small ${t === 'r' ? 'danger' : ''}" data-join="${t}">${st.teams[me.uid] === t ? '✓ אתה כאן' : 'הצטרף'}</button>
+      ${st.teams[me.uid] === t && st.spy[t] !== me.uid ? `<button class="btn small secondary" data-spy="${t}">אני רב-מרגל</button>` : ''}</div>`;
+  const unassigned = players.filter(p => !st.teams[p]);
+  return `<div class="card">
+      <div class="muted" style="margin-bottom:8px">שפה</div>
+      <div class="chips">${[['he', 'עברית'], ['en', 'English']].map(([k, n]) => `<button class="chip ${st.lang === k ? 'on' : ''}" data-lang="${k}" ${isHost ? '' : 'disabled'}>${n}</button>`).join('')}</div>
+      <div class="muted" style="margin:10px 0 8px">קבוצות (כל אחד בוחר לעצמו)</div>
+      <div class="cn-teams">${col('r')}${col('b')}</div>
+      ${unassigned.length ? `<div class="muted" style="margin-top:8px">עוד לא בחרו: ${unassigned.map(p => esc(g.players[p].nick)).join(', ')}</div>` : ''}
+      ${isHost ? '<button class="btn secondary block" id="cnShuffle" style="margin-top:10px">🔀 חלק לקבוצות אוטומטית</button>' : ''}
+      <div class="muted" style="font-size:13px;margin-top:8px">צריך לפחות 2 בכל קבוצה ורב-מרגל לכל קבוצה</div></div>`;
+}
+function bindCodenamesSettings(g) {
+  const sref = ref(db, `games/${curGid}/settings`), st = cnSet(g);
+  view.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => update(sref, { lang: b.dataset.lang }));
+  view.querySelectorAll('[data-join]').forEach(b => b.onclick = () => {
+    const t = b.dataset.join, u = { [`teams/${me.uid}`]: t };
+    for (const k of ['r', 'b']) if (st.spy[k] === me.uid && k !== t) u[`spy/${k}`] = null;
+    update(sref, u);
+  });
+  view.querySelectorAll('[data-spy]').forEach(b => b.onclick = () => update(sref, { [`spy/${b.dataset.spy}`]: me.uid }));
+  if ($('#cnShuffle')) $('#cnShuffle').onclick = () => {
+    const ps = orderOf(g.players).sort(() => Math.random() - 0.5), teams = {};
+    ps.forEach((p, i) => teams[p] = i % 2 ? 'b' : 'r');
+    update(sref, { teams, spy: { r: ps[0], b: ps[1] || null } });
+  };
+}
+function startCodenames(g) {
+  const st = cnSet(g), players = orderOf(g.players);
+  const teams = {}; for (const p of players) if (st.teams[p]) teams[p] = st.teams[p];
+  const spy = { ...st.spy };
+  for (const t of ['r', 'b']) {
+    const mem = players.filter(p => teams[p] === t);
+    if (mem.length < 2) return toast(`צריך לפחות 2 שחקנים בקבוצה ${Cn.TEAM_HE[t]}`);
+    if (!spy[t] || teams[spy[t]] !== t) spy[t] = mem[0];
+  }
+  return update(ref(db, `games/${curGid}`), { status: 'playing', state: Cn.newGame(st.lang, teams, spy) });
+}
+
+let cnHint = null, cnSkip = [], cnPick = null, cnNum = 1, cnKey = '';
+function renderCodenames(g) {
+  view.classList.remove('game-mode');
+  const s = Cn.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const myTeam = s.teams[me.uid], amSpy = myTeam && s.spy[myTeam] === me.uid;
+  const key = s.turn + s.phase + Object.keys(s.revealed).length;
+  if (cnKey !== key) { cnKey = key; cnPick = null; if (s.phase !== 'clue') { cnHint = null; cnSkip = []; } }
+  const myGuess = !s.winner && s.phase === 'guess' && myTeam === s.turn && !amSpy;
+  const myClue = !s.winner && s.phase === 'clue' && amSpy && myTeam === s.turn;
+  const team = t => Object.keys(s.teams).filter(p => s.teams[p] === t);
+  const hintTargets = new Set(cnHint ? cnHint.targets : []);
+
+  let banner;
+  if (s.winner) banner = `🏆 הקבוצה ${Cn.TEAM_HE[s.winner]} ניצחה!${s.reason === 'assassin' ? ' (המתנקש נחשף 💀)' : ''}`;
+  else if (s.phase === 'clue') banner = `רב-המרגל של הקבוצה ${Cn.TEAM_HE[s.turn]} (${esc(names(s.spy[s.turn]))}) חושב על רמז…`;
+  else banner = `הרמז: <b class="cn-clue">${esc(s.clue.word)} ${s.clue.n}</b> · נשארו ${s.left >= 99 ? '∞' : s.left} ניחושים`;
+
+  view.innerHTML = `
+    <div class="row" style="margin-bottom:10px"><button class="btn small secondary" id="exitBtn">✕ יציאה</button>
+      <div class="grow" style="text-align:center"><span class="cn-score r">${Cn.remaining(s, 'r')}</span> · <span class="cn-score b">${Cn.remaining(s, 'b')}</span></div>
+      <span class="pill">${amSpy ? '🕵️ רב-מרגל' : myTeam ? 'סוכן' : 'צופה'} · ${myTeam ? Cn.TEAM_HE[myTeam] : ''}</span></div>
+    <div class="cn-banner ${s.winner || s.turn}">${banner}</div>
+    <div class="cn-grid">${s.words.map((w, i) => {
+      const k = s.key[i], rev = s.revealed[i], show = rev || amSpy || s.winner;
+      return `<button class="cn-card ${show ? 'k-' + k : ''} ${rev ? 'rev' : ''} ${cnPick === i ? 'pick' : ''} ${hintTargets.has(w) ? 'hint' : ''}" data-cn="${i}" ${myGuess && !rev ? '' : 'disabled'}>
+        <span class="${w.length > 9 ? 'xl' : w.length > 7 ? 'l' : ''}">${esc(w.replace(/-/g, ' '))}</span>${rev ? `<i>${{ r: '🟥', b: '🟦', n: '⬜', a: '💀' }[k]}</i>` : ''}</button>`;
+    }).join('')}</div>
+    ${myGuess ? `<div class="row" style="justify-content:center;margin:10px 0;gap:8px">
+        ${cnPick != null ? `<button class="btn" id="cnGo">✓ בחר "${esc(s.words[cnPick].replace(/-/g, ' '))}"</button>` : '<span class="muted">לחץ על קלף ואז אשר</span>'}
+        <button class="btn secondary" id="cnPass">סיים תור</button></div>` : ''}
+    ${myClue ? `<div class="card cn-cluebox">
+        <div class="row" style="gap:8px"><input class="input grow" id="cnWord" placeholder="מילת רמז אחת" autocomplete="off" autocorrect="off" dir="auto">
+          <button class="btn secondary" id="cnHelp" title="עזרה">💡 עזרה</button></div>
+        ${cnHint ? `<div class="cn-hintbox">הצעה: <b>${esc(cnHint.word)} ${cnHint.n}</b> <span class="muted">(${cnHint.targets.map(w => esc(w.replace(/-/g, ' '))).join(', ')})</span>
+          <button class="btn small" id="cnUse">השתמש</button><button class="btn small secondary" id="cnMore">עוד</button></div>` : ''}
+        <div class="chips" style="margin:10px 0">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(n => `<button class="chip ${cnNum === n ? 'on' : ''}" data-num="${n}">${n === 0 ? '∞' : n}</button>`).join('')}</div>
+        <button class="btn block" id="cnSend">שלח רמז</button></div>` : ''}
+    <div class="cn-teams" style="margin-top:12px">${['r', 'b'].map(t => `<div class="cn-col ${t}"><b>${Cn.TEAM_HE[t]}</b>
+      ${team(t).map(p => `<div class="cn-mem">${s.spy[t] === p ? '🕵️ ' : ''}${esc(names(p))}</div>`).join('')}</div>`).join('')}</div>`;
+
+  const tx = fn => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = Cn.norm(st); const e = fn(st); if (e) { cnErr = e; return; } return st; })
+    .then(r => { if (!r.committed) toast({ boardword: 'אי אפשר לתת מילה שעל הלוח', oneword: 'רק מילה אחת', notspy: 'רק רב-המרגל נותן רמז' }[cnErr] || 'הפעולה לא התקבלה'); })
+    .catch(() => toast('שגיאת חיבור'));
+  let cnErr = '';
+  view.querySelectorAll('[data-cn]').forEach(b => b.onclick = () => { const i = +b.dataset.cn; cnPick = cnPick === i ? null : i; renderCodenames(curGame); });
+  if ($('#cnGo')) $('#cnGo').onclick = () => { const i = cnPick; cnPick = null; tx(st => Cn.guess(st, me.uid, i)); };
+  if ($('#cnPass')) $('#cnPass').onclick = () => tx(st => Cn.pass(st, me.uid));
+  view.querySelectorAll('[data-num]').forEach(b => b.onclick = () => { const w = $('#cnWord').value; cnNum = +b.dataset.num; renderCodenames(curGame); $('#cnWord').value = w; });
+  const askHint = () => {
+    const w = $('#cnWord')?.value || '';
+    cnHint = Cn.suggest(s, myTeam, cnSkip);
+    if (!cnHint) { cnSkip = []; cnHint = Cn.suggest(s, myTeam, []); }
+    if (!cnHint) toast('לא מצאתי הצעה טובה 🤔');
+    renderCodenames(curGame); if ($('#cnWord')) $('#cnWord').value = w;
+  };
+  if ($('#cnHelp')) $('#cnHelp').onclick = askHint;
+  if ($('#cnMore')) $('#cnMore').onclick = () => { cnSkip.push(cnHint.word); askHint(); };
+  if ($('#cnUse')) $('#cnUse').onclick = () => { cnNum = cnHint.n; const w = cnHint.word; renderCodenames(curGame); $('#cnWord').value = w; };
+  if ($('#cnSend')) $('#cnSend').onclick = () => { const w = $('#cnWord').value.trim(), n = cnNum; if (!w) return toast('כתוב מילת רמז'); tx(st => Cn.giveClue(st, me.uid, w, n)); };
+  if ($('#cnWord')) $('#cnWord').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#cnSend').click(); } };
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if (s.winner) {
+    if (isHost && g.status === 'playing') finishMulti(g, team(s.winner), Object.keys(s.teams));
+    winDialog(g, banner, myTeam === s.winner ? '🏆' : '🕵️', () => update(ref(db, `games/${curGid}`), { status: 'lobby' }));
+  } else delete $('#modal').dataset.winShown;
 }
 
 // ---------- friends ----------
