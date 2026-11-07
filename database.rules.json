@@ -1,6 +1,68 @@
 {
   "rules": {
-    ".read": "auth != null",
-    ".write": "auth != null"
+    "nicks": {
+      "$nick": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.val() === auth.uid) && (!newData.exists() || newData.val() === auth.uid)"
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null",
+        "nick": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 16 && root.child('nicks').child(newData.val().toLowerCase()).val() === auth.uid"
+        },
+        "createdAt": { ".write": "auth != null && auth.uid === $uid" },
+        "activeGame": { ".write": "auth != null && auth.uid === $uid" },
+        "stats": {
+          "$game": {
+            "$field": {
+              ".write": "auth != null",
+              ".validate": "($field === 'played' || $field === 'won') && newData.isNumber() && newData.val() >= (data.exists() ? data.val() : 0) && newData.val() <= (data.exists() ? data.val() : 0) + 1"
+            }
+          }
+        },
+        "$other": { ".validate": false }
+      }
+    },
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.isBoolean()"
+      }
+    },
+    "friends": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$other": {
+          ".write": "auth != null && (auth.uid === $uid || auth.uid === $other)",
+          ".validate": "newData.isString() && newData.val().length <= 16"
+        }
+      }
+    },
+    "friendRequests": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$from": {
+          ".write": "auth != null && (auth.uid === $from || auth.uid === $uid) && $from !== $uid"
+        }
+      }
+    },
+    "invites": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$gid": {
+          ".write": "auth != null && (auth.uid === $uid || (newData.exists() && root.child('games').child($gid).child('host').val() === auth.uid))"
+        }
+      }
+    },
+    "games": {
+      "$gid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() ? newData.child('host').val() === auth.uid : (!newData.exists() ? data.child('host').val() === auth.uid : (data.child('players').child(auth.uid).exists() || (newData.child('players').child(auth.uid).exists() && data.child('status').val() === 'lobby'))))"
+      }
+    }
   }
 }
