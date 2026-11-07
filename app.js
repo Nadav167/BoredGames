@@ -21,6 +21,7 @@ import * as Rk from './games/rummikub.js';
 import * as Pk from './games/poker.js';
 import * as Cn from './games/codenames.js';
 import * as Ca from './games/cah.js';
+import * as Hi from './games/hitster.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -52,7 +53,7 @@ const GAMES = [
   { id: 'poker', name: 'פוקר', ico: '♠️', ready: true, min: 2, max: 8 },
   { id: 'codenames', name: 'שם קוד', ico: '🔤', ready: true, min: 4, max: 16, bots: false },
   { id: 'catan', name: 'קטאן', ico: '🏝️' },
-  { id: 'hitster', name: 'היטסטר', ico: '🎵' },
+  { id: 'hitster', name: 'היטסטר', ico: '🎵', ready: true, min: 2, max: 12, bots: false, table: true },
 ];
 const gameById = id => GAMES.find(g => g.id === id);
 
@@ -339,6 +340,7 @@ async function createGame(type, bots, level) {
   if (type === 'rummy') g.settings = { turnSec: 0 };
   if (type === 'poker') g.settings = Pk.DEFAULT_SETTINGS;
   if (type === 'cah') g.settings = Ca.DEFAULT_SETTINGS;
+  if (type === 'hitster') g.settings = Hi.DEFAULT_SETTINGS;
   if (type === 'codenames') g.settings = { lang: 'he', teams: { [me.uid]: 'r' }, spy: {} };
   if (bots) { g.status = 'playing'; g.state = type === 'chess' ? startChessState(players, 0) : type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
     : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
@@ -375,6 +377,7 @@ function openGame(gid) {
     else if (g.type === 'poker') { renderPoker(g); pokerTick(g); }
     else if (g.type === 'codenames') renderCodenames(g);
     else if (g.type === 'cah') { renderCah(g); cahTick(g); }
+    else if (g.type === 'hitster') renderHitster(g);
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -393,7 +396,7 @@ function renderLobby(g) {
       ${players.map(p => `<div class="list-item">
         <div class="avatar">${g.players[p].bot ? '🤖' : esc(g.players[p].nick[0])}</div>
         <div class="grow">${esc(g.players[p].nick)} ${p === g.host ? '<span class="pill">מארח</span>' : ''}</div>
-        ${isHost && g.players[p].bot ? `<button class="btn small secondary" data-kick="${p}">הסר</button>` : ''}
+        ${isHost && (g.players[p].bot || g.players[p].local) ? `<button class="btn small secondary" data-kick="${p}">הסר</button>` : ''}
       </div>`).join('')}
       ${isHost && info.bots !== false && !info.botLevels && !info.oneBot ? `<button class="btn secondary block" id="addBot" style="margin-top:10px">➕ הוסף בוט</button>` : ''}
     </div>
@@ -407,6 +410,7 @@ function renderLobby(g) {
     ${g.type === 'poker' ? pokerSettingsHtml(g, isHost) : ''}
     ${g.type === 'codenames' ? codenamesSettingsHtml(g, isHost) : ''}
     ${g.type === 'cah' ? cahSettingsHtml(g, isHost) : ''}
+    ${g.type === 'hitster' ? hitsterSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -432,6 +436,7 @@ function renderLobby(g) {
     if (g.type === 'rummy') bindRummiSettings();
     if (g.type === 'poker') bindPokerSettings(g);
     if (g.type === 'cah') bindCahSettings(g);
+    if (g.type === 'hitster') bindHitsterSettings(g);
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -451,6 +456,7 @@ function renderLobby(g) {
       : g.type === 'poker' ? startPoker(g)
       : g.type === 'codenames' ? startCodenames(g)
       : g.type === 'cah' ? startCah(g)
+      : g.type === 'hitster' ? startHitster(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -1461,7 +1467,7 @@ async function finishMulti(g, winners, uids) {
   if (!r.committed) return;
   const u = {};
   for (const p of uids) {
-    if (!g.players[p] || g.players[p].bot) continue;
+    if (!g.players[p] || g.players[p].bot || g.players[p].local) continue;
     u[`users/${p}/stats/${g.type}/played`] = increment(1);
     if (winners.includes(p)) u[`users/${p}/stats/${g.type}/won`] = increment(1);
   }
@@ -2372,6 +2378,83 @@ function cahTick(g) {
     if (st.round + st.phase + Object.keys(st.subs).length !== stamp) return;
     return job(st) ? undefined : st;
   }).catch(() => {}).finally(() => { caBusy = false; if (curGid === gid && curGame) cahTick(curGame); }), delay);
+}
+
+// ---------- Hitster UI ----------
+const hiSet = g => ({ ...Hi.DEFAULT_SETTINGS, ...(g.settings || {}) });
+function hitsterSettingsHtml(g, isHost) {
+  const st = hiSet(g);
+  const modeTxt = { one: '📱 טלפון אחד לכולם', multi: '📱📱 כל אחד בטלפון שלו' };
+  const packTxt = { mix: 'הכל', intl: 'בינלאומי', il: 'ישראלי (אירוויזיון ועוד)' };
+  if (!isHost) return `<div class="card"><div class="muted">הגדרות</div><p>${modeTxt[st.mode]} · ${Hi.SERVICES[st.service].name} · ${packTxt[st.pack]} · עד ${st.target} שירים</p></div>`;
+  const chips = (key, opts) => `<div class="chips">${opts.map(([v, t]) => `<button class="chip ${st[key] === v ? 'on' : ''}" data-hi="${key}" data-v="${v}">${t}</button>`).join('')}</div>`;
+  return `<div class="card">
+    <div class="muted" style="margin-bottom:6px">איך משחקים</div>${chips('mode', Object.entries(modeTxt))}
+    ${st.mode === 'one' ? `<div class="muted" style="margin:10px 0 6px">שחקנים בלי האפליקציה (משחקים על הטלפון שלך)</div>
+      <div class="row"><input class="input grow" id="hiLocal" placeholder="שם שחקן" autocomplete="off"><button class="btn" id="hiAdd">הוסף</button></div>` : ''}
+    <div class="muted" style="margin:10px 0 6px">שירות מוזיקה</div>${chips('service', Object.entries(Hi.SERVICES).map(([k, v]) => [k, v.name]))}
+    <div class="muted" style="margin:10px 0 6px">שירים</div>${chips('pack', Object.entries(packTxt))}
+    <div class="muted" style="margin:10px 0 6px">מנצח מי שמגיע ל</div>${chips('target', [[5, '5 שירים'], [10, '10 שירים']])}</div>`;
+}
+function bindHitsterSettings(g) {
+  view.querySelectorAll('[data-hi]').forEach(b => b.onclick = () => {
+    const k = b.dataset.hi, v = k === 'target' ? +b.dataset.v : b.dataset.v;
+    update(ref(db, `games/${curGid}/settings`), { ...hiSet(g), [k]: v });
+  });
+  const add = () => {
+    const n = $('#hiLocal').value.trim(); if (!n) return;
+    set(ref(db, `games/${curGid}/players/loc_${Date.now().toString(36)}`), { nick: n, local: true, at: Date.now() });
+  };
+  if ($('#hiAdd')) { $('#hiAdd').onclick = add; $('#hiLocal').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }; }
+}
+const startHitster = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Hi.newGame(orderOf(g.players), hiSet(g)) });
+
+function renderHitster(g) {
+  view.classList.remove('game-mode');
+  const s = Hi.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const one = s.mode === 'one', svc = Hi.SERVICES[s.service];
+  const dj = Hi.dj(s), cur = Hi.song(s, s.current);
+  const iAmTurn = one || s.turn === me.uid, iAmDj = one || dj === me.uid;
+  const line = Hi.sorted(s, s.turn);
+  const card = (i, extra = '') => { const x = Hi.song(s, i); return `<div class="hi-card ${extra}"><b>${x.y}</b><span>${esc(x.t)}</span><small>${esc(x.a)}</small></div>`; };
+  let body = '';
+  if (s.phase === 'listen') {
+    body = iAmDj ? `<div class="status-card">
+        🎧 ${one ? `<b>${esc(names(dj))}</b> הוא ה-DJ: תן לו את הטלפון.` : '<b>אתה ה-DJ!</b>'}<br>
+        <span class="muted">לחץ "נגן" – השיר ייפתח ב-${svc.name}. רק ה-DJ מסתכל על המסך!</span>
+        <a class="btn block hi-play" href="${svc.url(`${cur.t} ${cur.a}`)}" target="_blank" rel="noopener">▶️ נגן ב-${svc.name}</a>
+        <button class="btn secondary block" id="hiGo">${one ? `השיר מתנגן – תעביר ל${esc(names(s.turn))} ←` : 'השיר מתנגן ✓'}</button></div>`
+      : `<div class="status-card">🎧 ${esc(names(dj))} (DJ) מנגן שיר…<br><span class="muted">${s.turn === me.uid ? 'תקשיב טוב – תכף תמקם אותו בציר הזמן שלך' : `${esc(names(s.turn))} ימקם אותו`}</span></div>`;
+  } else if (s.phase === 'place') {
+    body = iAmTurn ? `<div class="muted" style="margin:6px 0">${one ? `${esc(names(s.turn))}, ` : ''}איפה השיר נכנס בציר הזמן שלך?</div>
+      <div class="hi-line">${line.map((i, k) => `<button class="hi-slot" data-slot="${k}">⬇️ כאן</button>${card(i)}`).join('')}<button class="hi-slot" data-slot="${line.length}">⬇️ כאן</button></div>`
+      : `<div class="status-card">⏳ ${esc(names(s.turn))} ממקם את השיר…</div>
+         <div class="hi-line">${line.map(i => card(i)).join('')}</div>`;
+  } else if (s.phase === 'reveal') {
+    const after = [...line]; if (!s.correct) after.splice(s.slot, 0, s.current);
+    body = `<div class="hi-reveal ${s.correct ? 'ok' : 'bad'}">
+        <div class="hi-year">${cur.y}</div><b>${esc(cur.t)}</b><span>${esc(cur.a)}</span>
+        <div style="margin-top:8px;font-size:18px">${s.correct ? '✅ בול! הקלף נשאר אצלך' : '❌ לא במקום – הקלף נשרף'}</div></div>
+      <div class="hi-line">${(s.correct ? Hi.sorted(s, s.turn) : after).map(i => card(i, i === s.current ? (s.correct ? 'new' : 'wrong') : '')).join('')}</div>
+      ${(iAmTurn || isHost) && !s.winner ? '<button class="btn block sticky-btn" id="hiNext">השיר הבא ▶</button>' : ''}`;
+  }
+  view.innerHTML = `
+    <div class="row" style="margin-bottom:10px"><button class="btn small secondary" id="exitBtn">✕ יציאה</button>
+      <div class="grow muted" style="text-align:center">היטסטר · ${svc.name} · עד ${s.target}</div></div>
+    <div class="hi-scores">${s.order.map(p => `<span class="pill ${p === s.turn ? 'czar' : ''}">${esc(names(p))} ${s.lines[p].length}</span>`).join('')}</div>
+    <div class="cn-banner b" style="background:var(--accent)">🎵 התור של <b>${esc(names(s.turn))}</b></div>
+    ${body}`;
+  const tx = fn => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = Hi.norm(st); return fn(st) ? undefined : st; })
+    .then(r => { if (!r.committed) toast('הפעולה לא התקבלה'); }).catch(() => toast('שגיאת חיבור'));
+  if ($('#hiGo')) $('#hiGo').onclick = () => tx(st => Hi.startPlacing(st));
+  view.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => { const k = +b.dataset.slot; tx(st => Hi.place(st, k)); });
+  if ($('#hiNext')) $('#hiNext').onclick = () => tx(st => Hi.next(st));
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if (s.winner) {
+    if (isHost && g.status === 'playing') finishMulti(g, [s.winner], s.order.filter(p => !g.players[p]?.local));
+    winDialog(g, `🎵 ${esc(names(s.winner))} ניצח עם ${s.lines[s.winner].length} שירים!`, '🏆', () => startHitster(g));
+  } else delete $('#modal').dataset.winShown;
 }
 
 // ---------- friends ----------

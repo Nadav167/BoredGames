@@ -498,3 +498,17 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .cah-line { padding: 6px 0; border-bottom: 1px solid var(--line); }
 .cah-white[dir=ltr], .cah-black[dir=ltr] { text-align: left; } .cah-white .ans { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 html[data-theme="dark"] .cah-white .ans { color: #5b3fd6; }
+
+/* ===== Hitster ===== */
+.hi-scores { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.hi-play { margin: 14px 0 8px; background: #1db954; display: block; text-decoration: none; font-size: 18px; }
+.hi-line { display: flex; flex-direction: column; gap: 6px; padding-bottom: 80px; margin-top: 8px; }
+.hi-card { background: var(--surface); border-radius: 14px; padding: 10px 14px; display: grid; grid-template-columns: 64px 1fr; grid-template-rows: auto auto; column-gap: 10px; box-shadow: var(--shadow); }
+.hi-card b { grid-row: span 2; font-size: 24px; font-weight: 900; color: var(--accent); align-self: center; }
+.hi-card span { font-weight: 700; } .hi-card small { color: var(--muted); }
+.hi-card.new { box-shadow: 0 0 0 3px var(--ok); } .hi-card.wrong { box-shadow: 0 0 0 3px #d84a4a; opacity: .7; }
+.hi-slot { border: 2px dashed var(--accent); background: transparent; color: var(--accent); border-radius: 12px; padding: 8px; font-size: 15px; font-weight: 700; font-family: inherit; }
+.hi-slot:active { background: var(--accent); color: #fff; }
+.hi-reveal { text-align: center; border-radius: 18px; padding: 18px; color: #fff; display: flex; flex-direction: column; gap: 2px; }
+.hi-reveal.ok { background: var(--ok); } .hi-reveal.bad { background: #d84a4a; }
+.hi-year { font-size: 46px; font-weight: 900; line-height: 1; }
