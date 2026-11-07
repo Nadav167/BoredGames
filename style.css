@@ -385,3 +385,26 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .ei-mine { display: flex; gap: 8px; }
 .tk.hid1 { outline: 3px dashed rgba(255,255,255,.7); outline-offset: 2px; }
 .ei-row .pill { color: #222; } .ei-row .pill.bust { color: #fff; }
+
+/* ===== Chess ===== */
+.board.chess { border-color: #3d2b1f; }
+.csq { position: relative; display: grid; place-items: center; }
+.csq.lt { background: #eeeed2; } .csq.dk { background: #769656; }
+.csq.last { box-shadow: inset 0 0 0 100px rgba(255, 216, 77, .35); }
+.csq.sel { box-shadow: inset 0 0 0 100px rgba(255, 216, 77, .65); }
+.csq.chk { box-shadow: inset 0 0 0 100px rgba(229, 57, 53, .6); }
+.csq.tgt::after { content: ''; position: absolute; width: 30%; height: 30%; border-radius: 50%; background: rgba(0,0,0,.25); }
+.csq.tgt.cap::after { width: 86%; height: 86%; background: none; border: 5px solid rgba(0,0,0,.28); }
+.csq.can { cursor: pointer; }
+.csq .rk, .csq .fl { position: absolute; font-size: 10px; font-weight: 700; opacity: .6; color: #333; }
+.csq .rk { top: 1px; left: 2px; } .csq .fl { bottom: 0; right: 3px; }
+.cp { font-size: clamp(24px, 9vw, 52px); line-height: 1; font-family: 'Segoe UI Symbol', 'DejaVu Sans', 'Noto Sans Symbols 2', sans-serif; user-select: none; }
+.cp.cw { color: #fff; text-shadow: 0 0 1px #000, 0 0 1px #000, 0 0 2px #000, 0 2px 2px rgba(0,0,0,.4); }
+.cp.cb { color: #1d1d1d; text-shadow: 0 0 1px #fff, 0 2px 2px rgba(0,0,0,.35); }
+.cp.mini { font-size: 22px; }
+.cs-bar { justify-content: flex-start; padding: 8px 14px; }
+.caps { font-size: 16px; opacity: .85; letter-spacing: -2px; flex: 1; }
+.clock { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; background: rgba(0,0,0,.35); padding: 4px 12px; border-radius: 10px; }
+.clock.run { background: #fff; color: #111; }
+.promo { display: flex; justify-content: center; gap: 10px; }
+.promo button { width: 64px; height: 64px; border-radius: 14px; border: 2px solid var(--line); background: #769656; }

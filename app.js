@@ -16,6 +16,7 @@ import * as Ch from './games/cheat.js';
 import * as Sh from './games/shithead.js';
 import * as Du from './games/durak.js';
 import * as Ei from './games/eight.js';
+import * as Cs from './games/chess.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -43,7 +44,7 @@ const GAMES = [
   { id: 'perudo', name: 'פרודו', ico: '🎰', ready: true, min: 2, max: 10, bots: false },
   { id: 'rummy', name: 'רמי', ico: '🀄' },
   { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈' },
-  { id: 'chess', name: 'שחמט', ico: '♟️' },
+  { id: 'chess', name: 'שחמט', ico: '♟️', ready: true, min: 2, max: 2, botLevels: true },
   { id: 'poker', name: 'פוקר', ico: '♠️' },
   { id: 'codenames', name: 'שם קוד', ico: '🔤' },
   { id: 'catan', name: 'קטאן', ico: '🏝️' },
@@ -330,7 +331,8 @@ async function createGame(type, bots, level) {
   if (type === 'perudo') g.settings = Pe.DEFAULT_SETTINGS;
   if (type === 'cheat') g.settings = { rule: 'seq' };
   if (type === 'eight') g.settings = { target: 5 };
-  if (bots) { g.status = 'playing'; g.state = type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
+  if (type === 'chess') g.settings = { minutes: 0 };
+  if (bots) { g.status = 'playing'; g.state = type === 'chess' ? startChessState(players, 0) : type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
     : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
     : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
@@ -358,6 +360,7 @@ function openGame(gid) {
     else if (g.type === 'shithead') { renderShithead(g); shitheadTick(g); }
     else if (g.type === 'durak') { renderDurak(g); durakTick(g); }
     else if (g.type === 'eight') { renderEight(g); eightTick(g); }
+    else if (g.type === 'chess') { renderChess(g); chessTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -385,6 +388,7 @@ function renderLobby(g) {
     ${g.type === 'perudo' ? perudoSettingsHtml(g, isHost) : ''}
     ${g.type === 'cheat' ? cheatSettingsHtml(g, isHost) : ''}
     ${g.type === 'eight' ? eightSettingsHtml(g, isHost) : ''}
+    ${g.type === 'chess' ? chessSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -405,6 +409,7 @@ function renderLobby(g) {
     if (g.type === 'perudo') bindPerudoSettings(g);
     if (g.type === 'cheat') bindCheatSettings();
     if (g.type === 'eight') bindEightSettings();
+    if (g.type === 'chess') bindChessSettings();
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -419,6 +424,7 @@ function renderLobby(g) {
       : g.type === 'shithead' ? startShithead(g)
       : g.type === 'durak' ? startDurak(g)
       : g.type === 'eight' ? startEight(g)
+      : g.type === 'chess' ? startChess(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -1716,6 +1722,164 @@ function eightTick(g) {
     if (st.turn !== cur || st.hands[cur].length !== n || st.phase !== 'play') return 'x';
     return Ei.botMove(st, cur) === 'draw' ? Ei.draw(st, cur) : Ei.stand(st, cur);
   }).finally(() => { eiBusy = false; if (curGid === gid && curGame) eightTick(curGame); }), 1100);
+}
+
+// ---------- Chess UI ----------
+const CH_GLYPH = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
+const chessTime = g => g.settings?.minutes || 0;
+function chessSettingsHtml(g, isHost) {
+  const m = chessTime(g);
+  const label = n => n ? `${n} דקות` : 'בלי שעון';
+  if (!isHost) return `<div class="card"><div class="muted">זמן לכל שחקן</div><p><b>${label(m)}</b></p></div>`;
+  return `<div class="card"><div class="muted" style="margin-bottom:8px">זמן לכל שחקן</div>
+    <div class="chips">${[0, 3, 5, 10, 15, 30].map(n => `<button class="chip ${m === n ? 'on' : ''}" data-min="${n}">${label(n)}</button>`).join('')}</div></div>`;
+}
+function bindChessSettings() {
+  view.querySelectorAll('[data-min]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { minutes: +b.dataset.min }));
+}
+function startChessState(players, minutes, swapFrom) {
+  let ids = orderOf(players).slice(0, 2);
+  if (Math.random() < 0.5) ids.reverse();
+  if (swapFrom) ids = [swapFrom.b, swapFrom.w];
+  const s = { ...Cs.newGame(), colors: { w: ids[0], b: ids[1] } };
+  if (minutes) s.clock = { w: minutes * 60000, b: minutes * 60000, at: 0 };   // clock starts on white's first move
+  return s;
+}
+const startChess = (g, swap) => update(ref(db, `games/${curGid}`), { status: 'playing', state: startChessState(g.players, chessTime(g), swap ? g.state?.colors : null) });
+
+// time left for side t right now
+function clockLeft(s, t) {
+  if (!s.clock) return null;
+  let ms = s.clock[t];
+  if (!s.winner && s.turn === t && s.clock.at) ms -= Date.now() - s.clock.at;
+  return Math.max(0, ms);
+}
+const fmtClock = ms => { const sec = Math.ceil(ms / 1000), m = Math.floor(sec / 60), x = sec % 60; return `${m}:${String(x).padStart(2, '0')}`; };
+function chessCommit(st, mv) {      // apply a move inside a transaction, updating the clock
+  st = Cs.norm(st);
+  const t = st.turn, now = Date.now();
+  if (st.clock?.at) {                // clock runs from white's first move on
+    st.clock[t] -= now - st.clock.at;
+    if (st.clock[t] <= 0) { st.clock[t] = 0; st.winner = t === 'w' ? 'b' : 'w'; st.reason = 'time'; return st; }
+  }
+  if (Cs.play(st, mv)) return;
+  if (st.clock) st.clock.at = now;   // now the opponent's clock runs
+  st.drawOffer = null;
+  return st;
+}
+
+let csSel = null, csKey = '', csTimer = null;
+function renderChess(g) {
+  view.classList.add('game-mode');
+  const s = Cs.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const myColor = s.colors.w === me.uid ? 'w' : s.colors.b === me.uid ? 'b' : '';
+  const opp = myColor === 'b' ? 'w' : 'b', V = myColor || 'w';
+  const myTurn = !s.winner && s.turn === myColor;
+  if (csKey !== s.board + s.turn) { csSel = null; csKey = s.board + s.turn; }
+  const moves = myTurn ? Cs.legalMoves(s) : [];
+  const from = new Set(moves.map(m => m.from));
+  const targets = csSel != null ? moves.filter(m => m.from === csSel) : [];
+  const tset = new Set(targets.map(m => m.to));
+  const last = s.last ? s.last.split(',').map(Number) : [];
+  const check = !s.winner && Cs.inCheck(s) ? s.board.indexOf(s.turn === 'w' ? 'K' : 'k') : -1;
+  const flip = V === 'b';
+  let cells = '';
+  for (let k = 0; k < 64; k++) {
+    const i = flip ? 63 - k : k, r = i >> 3, c = i & 7, p = s.board[i];
+    const cls = ['csq', (r + c) % 2 ? 'dk' : 'lt', last.includes(i) ? 'last' : '', csSel === i ? 'sel' : '',
+      tset.has(i) ? (p === '.' ? 'tgt' : 'tgt cap') : '', i === check ? 'chk' : '', !csSel && from.has(i) ? 'can' : ''].join(' ');
+    const coord = (k % 8 === 0 ? `<span class="rk">${8 - r}</span>` : '') + (k >= 56 ? `<span class="fl">${'abcdefgh'[c]}</span>` : '');
+    cells += `<div class="${cls}" data-sq="${i}">${p !== '.' ? `<span class="cp ${p === p.toUpperCase() ? 'cw' : 'cb'}">${CH_GLYPH[p.toUpperCase()]}︎</span>` : ''}${coord}</div>`;
+  }
+  // captured material
+  const startCount = { P: 8, N: 2, B: 2, R: 2, Q: 1 };
+  const captured = t => Object.entries(startCount).map(([P, n]) => {
+    const have = [...s.board].filter(x => x === (t === 'w' ? P : P.toLowerCase())).length;
+    return CH_GLYPH[P].repeat(Math.max(0, n - have));
+  }).join('');
+  const reasons = { mate: 'מט', stalemate: 'פט', '50': 'חוק 50 המסעים', material: 'אין מספיק כלים', repetition: 'חזרה משולשת', time: 'נגמר הזמן', resign: 'פרישה', agreed: 'בהסכמה' };
+  let status;
+  if (s.winner === 'draw') status = `🤝 תיקו (${reasons[s.reason] || ''})`;
+  else if (s.winner) status = `${s.winner === myColor ? '🏆 ניצחת' : `🏆 ${esc(names(s.colors[s.winner]))} ניצח`} (${reasons[s.reason] || ''})`;
+  else if (myTurn) status = Cs.inCheck(s) ? '<b>שח!</b> התור שלך' : '<b>התור שלך</b>';
+  else status = `התור של ${esc(names(s.colors[s.turn]))}${Cs.inCheck(s) ? ' · שח!' : ''}`;
+  const bar = t => `<div class="ck-player cs-bar ${s.turn === t && !s.winner ? 'turn' : ''}">
+      <span class="cp ${t === 'w' ? 'cw' : 'cb'} mini">♚︎</span><b>${esc(names(s.colors[t]))}</b>
+      <span class="caps">${captured(t === 'w' ? 'b' : 'w')}</span>
+      ${s.clock ? `<span class="clock ${s.turn === t && !s.winner ? 'run' : ''}" data-clock="${t}">${fmtClock(clockLeft(s, t))}</span>` : ''}</div>`;
+  const offer = s.drawOffer && s.drawOffer !== myColor && myColor && !s.winner;
+  view.innerHTML = `<div class="table ck">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button><div class="grow dir">שחמט${s.clock ? ` · ${chessTime(g)} דק׳` : ''}</div>
+      ${myColor && !s.winner ? `<button class="btn small" id="drawBtn" ${s.drawOffer === myColor ? 'disabled' : ''}>🤝</button><button class="btn small" id="resignBtn">🏳️</button>` : ''}</div>
+    ${bar(opp)}
+    <div class="board-wrap"><div class="board chess">${cells}</div></div>
+    ${bar(V)}
+    ${offer ? `<div class="status" style="margin:6px auto">${esc(names(s.colors[s.drawOffer]))} מציע תיקו <button class="btn small ok" id="dYes">קבל</button> <button class="btn small" id="dNo">דחה</button></div>` : ''}
+    <div class="status" style="margin:6px auto 12px">${status}</div></div>`;
+
+  const sref = ref(db, `games/${curGid}/state`);
+  const tx = fn => runTransaction(sref, st => { if (!st) return st; return fn(Cs.norm(st)); }).then(r => { if (!r.committed) toast('המהלך לא התקבל'); }).catch(() => toast('שגיאת חיבור'));
+  view.querySelectorAll('[data-sq]').forEach(el => el.onclick = () => {
+    if (!myTurn) return;
+    const i = +el.dataset.sq;
+    if (csSel != null && tset.has(i)) {
+      const opts = targets.filter(m => m.to === i), mv = { from: csSel, to: i };
+      csSel = null;
+      if (opts.some(m => m.promo)) {
+        modal(`<h3>הכתרה</h3><div class="promo">${'QRBN'.split('').map(P => `<button data-pr="${P}"><span class="cp ${myColor === 'w' ? 'cw' : 'cb'}">${CH_GLYPH[P]}︎</span></button>`).join('')}</div>`);
+        document.querySelectorAll('[data-pr]').forEach(b => b.onclick = () => { closeModal(); tx(st => chessCommit(st, { ...mv, promo: b.dataset.pr })); });
+        return;
+      }
+      tx(st => chessCommit(st, mv)); return;
+    }
+    csSel = from.has(i) ? (csSel === i ? null : i) : null;
+    renderChess(curGame);
+  });
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if ($('#resignBtn')) $('#resignBtn').onclick = () => {
+    modal(`<h3>לפרוש?</h3><p class="muted">היריב ינצח.</p><button class="btn danger block" id="rY">פרוש</button><button class="btn secondary block" id="rN">ביטול</button>`);
+    $('#rN').onclick = closeModal; $('#rY').onclick = () => { closeModal(); tx(st => { if (st.winner) return; st.winner = opp; st.reason = 'resign'; return st; }); };
+  };
+  if ($('#drawBtn')) $('#drawBtn').onclick = () => {
+    const vsBot = g.players[s.colors[opp]]?.bot;
+    if (vsBot) return toast('הבוט דוחה את ההצעה 🤖');
+    tx(st => { st.drawOffer = myColor; return st; }); toast('הצעת תיקו נשלחה');
+  };
+  if ($('#dYes')) $('#dYes').onclick = () => tx(st => { if (st.winner) return; st.winner = 'draw'; st.reason = 'agreed'; st.drawOffer = null; return st; });
+  if ($('#dNo')) $('#dNo').onclick = () => tx(st => { st.drawOffer = null; return st; });
+
+  // live clock + flag fall
+  clearInterval(csTimer);
+  if (s.clock && !s.winner) {
+    csTimer = setInterval(() => {
+      if (curGame !== g) return clearInterval(csTimer);
+      for (const t of ['w', 'b']) { const el = document.querySelector(`[data-clock="${t}"]`); if (el) el.textContent = fmtClock(clockLeft(s, t)); }
+      if (s.clock.at && clockLeft(s, s.turn) <= 0) {
+        clearInterval(csTimer);
+        tx(st => { if (st.winner || !st.clock?.at) return; const left = st.clock[st.turn] - (Date.now() - st.clock.at); if (left > 0) return;
+          st.clock[st.turn] = 0; st.winner = st.turn === 'w' ? 'b' : 'w'; st.reason = 'time'; return st; });
+      }
+    }, 250);
+    screenOff.push(() => clearInterval(csTimer));
+  }
+  if (s.winner) winDialog(g, status, s.winner === myColor ? '🏆' : s.winner === 'draw' ? '🤝' : '♟️', () => startChess(g, true));
+  else delete $('#modal').dataset.winShown;
+}
+let csBusy = false;
+function chessTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Cs.norm(structuredClone(g.state));
+  if (s.winner) { finishTwoPlayer(g, s.winner === 'draw' ? '' : s.colors[s.winner], Object.values(s.colors)); return; }
+  const cur = s.colors[s.turn];
+  if (!g.players[cur]?.bot || csBusy) return;
+  csBusy = true; const gid = curGid, before = s.board + s.turn;
+  setTimeout(() => {
+    if (curGid !== gid) { csBusy = false; return; }
+    const m = Cs.botMove(s, g.players[cur].level || 'medium');
+    runTransaction(ref(db, `games/${gid}/state`), st => { if (!st || st.board + st.turn !== before) return; return chessCommit(st, m); })
+      .catch(() => {}).finally(() => { csBusy = false; if (curGid === gid && curGame) chessTick(curGame); });
+  }, 400);
 }
 
 // ---------- friends ----------
