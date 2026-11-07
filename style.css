@@ -349,3 +349,39 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .ch-actions { display: flex; flex-direction: column; gap: 8px; padding: 6px 10px 4px; }
 .rank-pick { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
 .rank-pick .chip { padding: 5px 10px; min-width: 38px; }
+
+/* ===== Shithead / Durak / 8½ ===== */
+.table.cardtable { background: radial-gradient(ellipse at center, var(--table), var(--table2)); }
+.tiny-card { --w: 30px; display: inline-block; vertical-align: middle; }
+.tiny-card .ix2 { display: none; }
+.mid-card { --w: 56px; }
+.up-row { display: flex; gap: 2px; justify-content: center; margin-top: 4px; min-height: 2px; }
+.table-row { display: flex; gap: 8px; justify-content: center; padding: 4px 8px; flex-wrap: wrap; }
+.table-row .tk { cursor: pointer; transition: transform .15s; }
+.table-row .tk.chosen { transform: translateY(-10px); box-shadow: 0 0 0 3px #ffd84d, 0 6px 14px rgba(0,0,0,.4); }
+.tk.pickable { box-shadow: 0 0 0 3px rgba(255,216,77,.8), 0 4px 10px rgba(0,0,0,.35); }
+.slot { position: relative; width: 56px; height: 100px; }
+.slot .tk { position: absolute; top: 0; left: 0; }
+.slot .tk.on-top { top: 16px; left: 4px; }
+.last-line { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center; font-size: 15px; }
+.deck-trump { position: relative; width: 100px; height: 82px; }
+.deck-trump .trump-card { position: absolute; left: 28px; top: 12px; transform: rotate(90deg); }
+.deck-trump .back { position: absolute; left: 0; top: 0; }
+.du-table { display: flex; flex-wrap: wrap; gap: 12px 18px; justify-content: center; padding: 0 10px; min-height: 100px; align-items: center; }
+.du-pair { position: relative; width: 70px; height: 100px; border-radius: 10px; }
+.du-pair .tk { position: absolute; top: 0; left: 0; }
+.du-pair .tk.def { top: 16px; left: 14px; transform: rotate(8deg); }
+.du-pair.target { box-shadow: 0 0 0 3px #ffd84d, 0 0 16px #ffd84d; cursor: pointer; }
+.tk.trumpc::after { content: '★'; position: absolute; bottom: 4%; left: 8%; font-size: .55em; color: #e0a800; }
+.ei-list { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; }
+.ei-row { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,.25); border-radius: 14px; padding: 8px 12px; border: 2px solid transparent; }
+.ei-row.turn { border-color: #ffd84d; }
+.ei-row.win { background: rgba(34,160,107,.55); }
+.ei-name { display: flex; flex-direction: column; min-width: 80px; font-size: 14px; }
+.ei-name .muted { color: rgba(255,255,255,.75); font-size: 12px; }
+.ei-cards { display: flex; gap: 3px; flex: 1; flex-wrap: wrap; }
+.ei-tot { font-size: 18px; min-width: 34px; text-align: center; }
+.pill.bust { background: #d84a4a; color: #fff; } .pill.turnp { background: #ffd84d; color: #222; }
+.ei-mine { display: flex; gap: 8px; }
+.tk.hid1 { outline: 3px dashed rgba(255,255,255,.7); outline-offset: 2px; }
+.ei-row .pill { color: #222; } .ei-row .pill.bust { color: #fff; }

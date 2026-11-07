@@ -13,6 +13,9 @@ import * as Ck from './games/checkers.js';
 import * as Bg from './games/backgammon.js';
 import * as Pe from './games/perudo.js';
 import * as Ch from './games/cheat.js';
+import * as Sh from './games/shithead.js';
+import * as Du from './games/durak.js';
+import * as Ei from './games/eight.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -34,9 +37,9 @@ const GAMES = [
   { id: 'checkers', name: 'דמקה', ico: '⚫', ready: true, min: 2, max: 2, botLevels: true },
   { id: 'backgammon', name: 'שש-בש', ico: '🎲', ready: true, min: 2, max: 2, oneBot: true },
   { id: 'cheat', name: "צ'יט", ico: '🤥', ready: true, min: 2, max: 10 },
-  { id: 'shithead', name: 'שיט-הד', ico: '💩' },
-  { id: 'durak', name: 'דוראק', ico: '🂡' },
-  { id: 'eight', name: 'שמונה וחצי', ico: '8½' },
+  { id: 'shithead', name: 'שיט-הד', ico: '💩', ready: true, min: 2, max: 8 },
+  { id: 'durak', name: 'דוראק', ico: '🂡', ready: true, min: 2, max: 6 },
+  { id: 'eight', name: 'שמונה וחצי', ico: '8½', ready: true, min: 2, max: 8 },
   { id: 'perudo', name: 'פרודו', ico: '🎰', ready: true, min: 2, max: 10, bots: false },
   { id: 'rummy', name: 'רמי', ico: '🀄' },
   { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈' },
@@ -326,8 +329,10 @@ async function createGame(type, bots, level) {
   if (type === 'checkers') g.settings = { rules: 'il' };
   if (type === 'perudo') g.settings = Pe.DEFAULT_SETTINGS;
   if (type === 'cheat') g.settings = { rule: 'seq' };
+  if (type === 'eight') g.settings = { target: 5 };
   if (bots) { g.status = 'playing'; g.state = type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
-    : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : Taki.newGame(orderOf(players)); }
+    : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
+    : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -350,6 +355,9 @@ function openGame(gid) {
     else if (g.type === 'backgammon') { renderBackgammon(g); bgTick(g); }
     else if (g.type === 'perudo') renderPerudo(g);
     else if (g.type === 'cheat') { renderCheat(g); cheatTick(g); }
+    else if (g.type === 'shithead') { renderShithead(g); shitheadTick(g); }
+    else if (g.type === 'durak') { renderDurak(g); durakTick(g); }
+    else if (g.type === 'eight') { renderEight(g); eightTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -376,6 +384,7 @@ function renderLobby(g) {
     ${g.type === 'checkers' ? checkersSettingsHtml(g, isHost) : ''}
     ${g.type === 'perudo' ? perudoSettingsHtml(g, isHost) : ''}
     ${g.type === 'cheat' ? cheatSettingsHtml(g, isHost) : ''}
+    ${g.type === 'eight' ? eightSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -395,6 +404,7 @@ function renderLobby(g) {
     if (g.type === 'checkers') bindCheckersSettings();
     if (g.type === 'perudo') bindPerudoSettings(g);
     if (g.type === 'cheat') bindCheatSettings();
+    if (g.type === 'eight') bindEightSettings();
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -406,6 +416,9 @@ function renderLobby(g) {
       : g.type === 'backgammon' ? startBg(g)
       : g.type === 'perudo' ? startPerudo(g)
       : g.type === 'cheat' ? startCheat(g)
+      : g.type === 'shithead' ? startShithead(g)
+      : g.type === 'durak' ? startDurak(g)
+      : g.type === 'eight' ? startEight(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -1267,7 +1280,7 @@ function renderPerudo(g) {
 
 // ---------- Cheat UI ----------
 function pcardHtml(c, extra = '', attrs = '') {
-  const red = c.s === '♥' || c.s === '♦', R = Ch.RANKS[c.r];
+  const red = c.s === '♥' || c.s === '♦', R = ({ 1: 'A', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' })[c.r] || String(c.r);
   return `<div class="tk pcard ${red ? 'red' : 'blk'} ${extra}" ${attrs}>
     <span class="ix ix1">${R}<br>${c.s}</span><div class="face"><span class="suit">${c.s}</span><span class="rk">${R}</span></div><span class="ix ix2">${R}<br>${c.s}</span></div>`;
 }
@@ -1408,6 +1421,301 @@ function cheatTick(g) {
     if (m.type === 'pass' ? Ch.pass(st, cur) : Ch.play(st, cur, m.ids, m.claim)) return;
     return st;
   }).catch(() => {}).finally(retick), 2400);
+}
+
+// ---------- shared helpers for card games ----------
+async function finishMulti(g, winners, uids) {
+  const r = await runTransaction(ref(db, `games/${curGid}/status`), st => st === 'playing' ? 'done' : undefined);
+  if (!r.committed) return;
+  const u = {};
+  for (const p of uids) {
+    if (!g.players[p] || g.players[p].bot) continue;
+    u[`users/${p}/stats/${g.type}/played`] = increment(1);
+    if (winners.includes(p)) u[`users/${p}/stats/${g.type}/won`] = increment(1);
+  }
+  if (Object.keys(u).length) await update(ref(db), u);
+}
+function exitDialog(isHost) {
+  modal(`<h3>לצאת מהמשחק?</h3><p class="muted">${isHost ? 'אתה המארח – יציאה תסגור את המשחק לכולם.' : 'תוכל לחזור מהמסך הראשי.'}</p>
+    ${isHost ? '' : '<button class="btn block" id="xHome">למסך הראשי (המשחק ממשיך)</button>'}
+    <button class="btn danger block" id="xLeave">${isHost ? 'סגור משחק' : 'עזוב'}</button><button class="btn secondary block" id="xNo">ביטול</button>`);
+  $('#xNo').onclick = closeModal; $('#xLeave').onclick = () => { closeModal(); leaveGame(); };
+  if ($('#xHome')) $('#xHome').onclick = () => { closeModal(); go('home'); };
+}
+function winDialog(g, title, emoji, restart) {
+  if ($('#modal').dataset.winShown) return;
+  $('#modal').dataset.winShown = '1';
+  const isHost = g.host === me.uid;
+  modal(`<div style="font-size:60px">${emoji}</div><h3>${title}</h3>
+    ${isHost ? '<button class="btn block" id="again">🔁 משחק חדש</button>' : '<p class="muted">המארח יכול להתחיל משחק חדש</p>'}
+    <button class="btn secondary block" id="wHome">למסך הראשי</button>`);
+  if (isHost) $('#again').onclick = () => { closeModal(); restart(); };
+  $('#wHome').onclick = () => { closeModal(); isHost ? leaveGame() : go('home'); };
+}
+const othersFrom = order => { const i = order.indexOf(me.uid); return i < 0 ? order : [...order.slice(i + 1), ...order.slice(0, i)]; };
+const txAct = (mod, fn) => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = mod.norm(st); if (fn(st)) return; return st; })
+  .then(r => { if (!r.committed) toast('הפעולה לא התקבלה'); }).catch(() => toast('שגיאת חיבור'));
+const sortCards = (cs, trumpS) => [...cs].sort((a, b) => ((a.s === trumpS) - (b.s === trumpS)) || a.r - b.r || a.s.localeCompare(b.s));
+
+// ---------- Shithead UI ----------
+const startShithead = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Sh.newGame(orderOf(g.players)) });
+let shSel = [], shSwapH = null, shKey = '';
+function renderShithead(g) {
+  view.classList.add('game-mode');
+  const s = Sh.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const me_ = me.uid, hand = sortCards(s.hands[me_] || []), up = s.up[me_] || [], down = s.down[me_] || [];
+  const src = Sh.source(s, me_);
+  const myTurn = s.phase === 'play' && s.turn === me_;
+  const key = s.phase + s.turn + s.pile.length + hand.length + up.length;
+  if (shKey !== key) { shKey = key; shSel = []; }
+  const t = Sh.top(s);
+  const lastTxt = (() => {
+    const L = s.last; if (!L) return '';
+    const n = esc(names(L.p));
+    if (L.kind === 'pickup') return `${n} לקח את הערימה`;
+    if (L.kind === 'blindfail') return `${n} הפך ${pcardHtml(L.cards[0], 'tiny-card')} ולקח את הערימה`;
+    return `${n} שם ${L.cards.length > 1 ? L.cards.length + ' × ' : ''}${Sh.top ? '' : ''}${pcardHtml(L.cards[0], 'tiny-card')}${L.burn ? ' 🔥 שרף!' : ''}`;
+  })();
+
+  const opp = othersFrom(s.order).map(p => `
+    <div class="opp ${s.turn === p && s.phase === 'play' ? 'turn' : ''} ${s.out.includes(p) ? 'out' : ''}">
+      <div class="n">${esc(names(p))}${s.phase === 'swap' ? (s.ready[p] ? ' ✓' : ' …') : ''}${s.out.includes(p) ? ' 🏁' : ''}</div>
+      <div class="c">🂠 ${s.hands[p].length} · למטה ${s.down[p].length}</div>
+      <div class="up-row">${s.up[p].map(c => pcardHtml(c, 'tiny-card')).join('')}</div></div>`).join('');
+
+  let center, bottom;
+  if (s.phase === 'swap') {
+    center = `<div class="status">החלף קלפים בין היד לקלפים הגלויים.<br>שים למעלה את הקלפים החזקים (2, 10, A…)</div>`;
+    bottom = `<div class="hand-title">הקלפים הגלויים שלך – לחץ על קלף מהיד ואז על גלוי להחלפה</div>
+      <div class="table-row">${up.map(c => pcardHtml(c, 'mid-card ' + (shSwapH != null ? 'pickable' : ''), `data-up="${c.id}"`)).join('')}</div>
+      <div class="hand-title">היד שלך</div>
+      <div class="table-row">${hand.map(c => pcardHtml(c, 'mid-card ' + (shSwapH === c.id ? 'chosen' : ''), `data-sw="${c.id}"`)).join('')}</div>
+      <div style="text-align:center;margin-top:10px">${s.ready[me_] ? '<span class="status">ממתינים לשאר השחקנים…</span>' : '<button class="btn" id="shReady">מוכן ✓</button>'}</div>`;
+  } else {
+    center = `<div class="piles">
+        <div class="pile-stack">${s.deck.length ? cardBack('', `<b>BG</b><span>${s.deck.length}</span>`) : '<div class="empty-pile">הקופה נגמרה</div>'}</div>
+        <div class="pile-stack">${t ? pcardHtml(t, 'topcard') : '<div class="empty-pile">ערימה ריקה</div>'}</div></div>
+      <div class="dir">${s.pile.length ? `${s.pile.length} קלפים בערימה` : ''}${s.burned ? ` · נשרפו ${s.burned}` : ''}</div>
+      <div class="status">${s.phase === 'over' ? `💩 ${esc(names(s.loser))} הוא השיט-הד!` : myTurn ? (src === 'down' ? '<b>התור שלך</b> – הפוך קלף עלום' : '<b>התור שלך</b>') : `התור של ${esc(names(s.turn))}`}</div>
+      ${lastTxt ? `<div class="dir last-line">${lastTxt}</div>` : ''}`;
+    const canAny = myTurn && Sh.canPlayAny(s, me_);
+    const selCards = shSel.map(id => [...hand, ...up].find(c => c.id === id)).filter(Boolean);
+    bottom = `
+      <div class="table-row">${down.map((c, i) => `<div class="slot">${cardBack('mid-card ' + (myTurn && src === 'down' ? 'pickable' : ''), '<b>?</b>').replace('<div class="tk back', `<div data-down="${i}" class="tk back`)}${up[i] ? pcardHtml(up[i], 'mid-card on-top ' + (shSel.includes(up[i].id) ? 'chosen ' : '') + (myTurn && src === 'up' && Sh.canPlayRank(s, up[i].r) ? 'pickable' : ''), `data-upc="${up[i].id}"`) : ''}</div>`).join('')}</div>
+      ${myTurn ? `<div class="row" style="justify-content:center;margin:8px 0">
+        ${src !== 'down' ? `<button class="btn" id="shPlay" ${selCards.length ? '' : 'disabled'}>${selCards.length ? `שים ${selCards.length} קלפים` : 'בחר קלפים'}</button>` : ''}
+        ${!canAny && s.pile.length ? '<button class="btn danger" id="shPick">קח את הערימה</button>' : ''}</div>` : ''}
+      <div class="hand-title">היד שלך (${hand.length})</div>
+      <div class="fan">${hand.map(c => pcardHtml(c, (shSel.includes(c.id) ? 'chosen ' : '') + (myTurn && src === 'hands' ? (Sh.canPlayRank(s, c.r) ? '' : 'dim') : ''), `data-pc="${c.id}"`)).join('')}</div>`;
+  }
+  view.innerHTML = `<div class="table cardtable">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button><div class="grow dir">שיט-הד</div></div>
+    <div class="opps">${opp}</div><div class="center">${center}</div><div class="hand-wrap">${bottom}</div></div>`;
+  layoutFan();
+
+  const pickCard = (id, list) => {
+    const c = list.find(x => x.id === id); if (!c) return;
+    if (!Sh.canPlayRank(s, c.r)) return toast('הקלף נמוך מדי');
+    if (shSel.includes(id)) shSel = shSel.filter(x => x !== id);
+    else { const r0 = shSel.length && list.find(x => x.id === shSel[0]); shSel = r0 && r0.r === c.r ? [...shSel, id] : [id]; }
+    renderShithead(curGame);
+  };
+  view.querySelectorAll('[data-pc]').forEach(el => el.onclick = () => { if (myTurn && src === 'hands') pickCard(+el.dataset.pc, hand); });
+  view.querySelectorAll('[data-upc]').forEach(el => el.onclick = () => { if (myTurn && src === 'up') pickCard(+el.dataset.upc, up); });
+  view.querySelectorAll('[data-down]').forEach(el => el.onclick = () => { if (myTurn && src === 'down') txAct(Sh, st => Sh.flipDown(st, me_, +el.dataset.down)); });
+  view.querySelectorAll('[data-sw]').forEach(el => el.onclick = () => { shSwapH = shSwapH === +el.dataset.sw ? null : +el.dataset.sw; renderShithead(curGame); });
+  view.querySelectorAll('[data-up]').forEach(el => el.onclick = () => {
+    if (shSwapH == null) return toast('קודם בחר קלף מהיד');
+    const h = shSwapH; shSwapH = null; txAct(Sh, st => Sh.swap(st, me_, h, +el.dataset.up));
+  });
+  if ($('#shReady')) $('#shReady').onclick = () => txAct(Sh, st => Sh.setReady(st, me_));
+  if ($('#shPlay')) $('#shPlay').onclick = () => { const ids = shSel; shSel = []; txAct(Sh, st => Sh.play(st, me_, ids)); };
+  if ($('#shPick')) $('#shPick').onclick = () => txAct(Sh, st => Sh.pickUp(st, me_));
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if (s.phase === 'over') winDialog(g, s.loser === me_ ? 'אתה השיט-הד 💩' : `${esc(names(s.out[0]))} סיים ראשון · ${esc(names(s.loser))} השיט-הד`, s.loser === me_ ? '💩' : '🏆', () => startShithead(g));
+  else delete $('#modal').dataset.winShown;
+}
+let shBusy = false;
+function shitheadTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Sh.norm(structuredClone(g.state)), isBot = p => g.players[p]?.bot;
+  if (s.phase === 'over') { finishMulti(g, s.out.slice(0, 1), s.order); return; }
+  if (shBusy) return;
+  const gid = curGid, done = () => { shBusy = false; if (curGid === gid && curGame) shitheadTick(curGame); };
+  if (s.phase === 'swap') {
+    const b = s.order.find(p => isBot(p) && !s.ready[p]); if (!b) return;
+    shBusy = true;
+    setTimeout(() => txAct(Sh, st => { if (st.phase !== 'swap' || st.ready[b]) return 'x'; Sh.botSwap(st, b); return null; }).finally(done), 500);
+    return;
+  }
+  if (!isBot(s.turn)) return;
+  shBusy = true; const cur = s.turn, before = s.pile.length + ':' + s.turn + ':' + s.deck.length;
+  setTimeout(() => txAct(Sh, st => {
+    if (st.pile.length + ':' + st.turn + ':' + st.deck.length !== before) return 'x';
+    const m = Sh.botMove(st, cur);
+    return m.type === 'play' ? Sh.play(st, cur, m.ids) : m.type === 'flip' ? Sh.flipDown(st, cur, m.idx) : Sh.pickUp(st, cur);
+  }).finally(done), 1300);
+}
+
+// ---------- Durak UI ----------
+const startDurak = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Du.newGame(orderOf(g.players)) });
+let duSel = [], duKey = '';
+function renderDurak(g) {
+  view.classList.add('game-mode');
+  const s = Du.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const me_ = me.uid, hand = sortCards(s.hands[me_] || [], s.trump.s);
+  const isDef = s.defender === me_, inGame = !s.out.includes(me_) && !Du.over(s);
+  const key = s.table.length + ':' + s.table.filter(x => x.d).length + s.defender + hand.length + s.taking;
+  if (duKey !== key) { duKey = key; duSel = []; }
+  const open = s.table.map((x, i) => [x, i]).filter(([x]) => !x.d);
+  const canDefendWith = c => open.some(([x]) => Du.beats(s, c, x.a));
+  const selCards = duSel.map(id => hand.find(c => c.id === id)).filter(Boolean);
+  const throwable = c => !isDef && Du.canThrow(s, me_, duSel.includes(c.id) ? selCards : [...selCards.filter(x => x.r === c.r), c]);
+
+  let info;
+  if (Du.over(s)) info = s.loser === 'draw' ? '🤝 תיקו – אין דוראק' : `🃏 ${esc(names(s.loser))} הוא הדוראק!`;
+  else if (s.taking) info = `${esc(names(s.defender))} לוקח${!isDef ? ' – אפשר להוסיף קלפים' : ''}`;
+  else if (!s.table.length) info = s.attacker === me_ ? '<b>אתה תוקף</b> – בחר קלף אחד או כמה מאותה דרגה' : `${esc(names(s.attacker))} תוקף את ${esc(names(s.defender))}`;
+  else if (isDef) info = open.length ? '<b>הגן!</b> בחר קלף ואז את הקלף שאתה מכה' : 'הכית הכל – ממתינים לתוקפים';
+  else info = open.length ? `${esc(names(s.defender))} מתגונן…` : 'אפשר להוסיף קלפים מאותן דרגות, או ללחוץ "ביטה"';
+
+  const opp = othersFrom(s.order).map(p => `
+    <div class="opp ${(s.table.length ? s.defender : s.attacker) === p && !Du.over(s) ? 'turn' : ''} ${s.out.includes(p) ? 'out' : ''}">
+      <div class="n">${p === s.attacker ? '⚔️ ' : p === s.defender ? '🛡️ ' : ''}${esc(names(p))}</div>
+      <div class="mini-cards">${'<span></span>'.repeat(Math.min(s.hands[p].length, 10))}</div>
+      <div class="c">${s.out.includes(p) ? 'יצא ✓' : s.hands[p].length + ' קלפים'}${s.done[p] ? ' · ביטה' : ''}</div></div>`).join('');
+  const canPass = inGame && !isDef && s.table.length && (s.taking || !open.length) && !s.done[me_];
+
+  view.innerHTML = `<div class="table cardtable">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button><div class="grow dir">דוראק · ${me_ === s.attacker ? '⚔️ אתה תוקף' : isDef ? '🛡️ אתה מתגונן' : ''}</div></div>
+    <div class="opps">${opp}</div>
+    <div class="center" style="gap:10px">
+      <div class="row" style="gap:14px;align-items:center">
+        <div class="deck-trump">${s.deck.length ? `${pcardHtml(s.trump, 'mid-card trump-card')}${cardBack('mid-card', `<b>BG</b><span>${s.deck.length}</span>`)}` : `<div class="empty-pile" style="width:56px;height:82px">קוזר ${s.trump.s}</div>`}</div>
+        <div class="muted" style="color:#fff">קוזר: <b style="font-size:22px;color:${'♥♦'.includes(s.trump.s) ? '#ff8a80' : '#fff'}">${s.trump.s}</b></div>
+      </div>
+      <div class="du-table">${s.table.map((x, i) => `<div class="du-pair ${isDef && !x.d && duSel.length === 1 && Du.beats(s, selCards[0], x.a) ? 'target' : ''}" data-slot="${i}">
+          ${pcardHtml(x.a, 'mid-card')}${x.d ? pcardHtml(x.d, 'mid-card def') : ''}</div>`).join('') || '<div class="dir">השולחן ריק</div>'}</div>
+      <div class="status">${info}</div>
+    </div>
+    <div class="hand-wrap">
+      ${inGame ? `<div class="row" style="justify-content:center;margin:4px 0 6px;gap:8px">
+        ${!isDef && selCards.length ? `<button class="btn" id="duThrow">${s.table.length ? 'הוסף' : 'תקוף'} (${selCards.length})</button>` : ''}
+        ${isDef && s.table.length && !s.taking && open.length ? '<button class="btn danger" id="duTake">לקחת</button>' : ''}
+        ${canPass ? `<button class="btn secondary" id="duPass">${s.taking ? 'סיימתי להוסיף' : 'ביטה ✓'}</button>` : ''}
+      </div>` : ''}
+      <div class="hand-title">הקלפים שלך (${hand.length})</div>
+      <div class="fan">${hand.map(c => {
+        const ok = inGame && (isDef ? (!s.taking && canDefendWith(c)) : throwable(c));
+        return pcardHtml(c, (duSel.includes(c.id) ? 'chosen ' : '') + (ok || duSel.includes(c.id) ? '' : 'dim') + (c.s === s.trump.s ? ' trumpc' : ''), `data-pc="${c.id}"`);
+      }).join('')}</div>
+    </div></div>`;
+  layoutFan();
+
+  view.querySelectorAll('[data-pc]').forEach(el => el.onclick = () => {
+    if (!inGame) return;
+    const id = +el.dataset.pc, c = hand.find(x => x.id === id);
+    if (isDef) { duSel = duSel[0] === id ? [] : [id]; }
+    else if (duSel.includes(id)) duSel = duSel.filter(x => x !== id);
+    else { const same = selCards.length && selCards[0].r === c.r; duSel = same ? [...duSel, id] : [id]; }
+    renderDurak(curGame);
+    if (isDef && duSel.length) {   // only one open card it can beat → defend right away
+      const opts = open.filter(([x]) => Du.beats(s, c, x.a));
+      if (opts.length === 1) { const i = opts[0][1]; duSel = []; txAct(Du, st => Du.defend(st, me_, i, id)); }
+    }
+  });
+  view.querySelectorAll('[data-slot]').forEach(el => el.onclick = () => {
+    if (!isDef || duSel.length !== 1) return;
+    const id = duSel[0]; duSel = []; txAct(Du, st => Du.defend(st, me_, +el.dataset.slot, id));
+  });
+  if ($('#duThrow')) $('#duThrow').onclick = () => { const ids = duSel; duSel = []; txAct(Du, st => Du.attack(st, me_, ids)); };
+  if ($('#duTake')) $('#duTake').onclick = () => txAct(Du, st => Du.take(st, me_));
+  if ($('#duPass')) $('#duPass').onclick = () => txAct(Du, st => Du.pass(st, me_));
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if (Du.over(s)) winDialog(g, s.loser === me_ ? 'אתה הדוראק 🤡' : s.loser === 'draw' ? 'תיקו!' : `${esc(names(s.loser))} הדוראק`, s.loser === me_ ? '🤡' : '🏆', () => startDurak(g));
+  else delete $('#modal').dataset.winShown;
+}
+let duBusy = false;
+function durakTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Du.norm(structuredClone(g.state)), isBot = p => g.players[p]?.bot;
+  if (Du.over(s)) { finishMulti(g, s.order.filter(p => p !== s.loser), s.order); return; }
+  if (duBusy) return;
+  const stamp = st => JSON.stringify([st.table, st.taking, st.done, st.attacker, st.defender]);
+  for (const p of [s.defender, ...Du.attackers(s)]) {
+    if (!isBot(p)) continue;
+    const a = Du.botAction(s, p); if (!a) continue;
+    duBusy = true; const gid = curGid, before = stamp(s);
+    setTimeout(() => txAct(Du, st => {
+      if (stamp(st) !== before) return 'x';
+      const b = Du.botAction(st, p); if (!b) return 'x';
+      return b.type === 'attack' ? Du.attack(st, p, b.ids) : b.type === 'defend' ? Du.defend(st, p, b.idx, b.id) : b.type === 'take' ? Du.take(st, p) : Du.pass(st, p);
+    }).finally(() => { duBusy = false; if (curGid === gid && curGame) durakTick(curGame); }), a.type === 'pass' ? 1600 : 1100);
+    return;
+  }
+}
+
+// ---------- 8½ UI ----------
+function eightSettingsHtml(g, isHost) {
+  const t = g.settings?.target || 5;
+  if (!isHost) return `<div class="card"><div class="muted">משחקים עד</div><p><b>${t} נקודות</b></p></div>`;
+  return `<div class="card"><div class="muted" style="margin-bottom:8px">משחקים עד</div>
+    <div class="chips">${[3, 5, 7, 10].map(n => `<button class="chip ${t === n ? 'on' : ''}" data-target="${n}">${n} נקודות</button>`).join('')}</div>
+    <div class="muted" style="font-size:14px">כל סיבוב: מי שהכי קרוב ל-8½ בלי לעבור מקבל נקודה</div></div>`;
+}
+function bindEightSettings() {
+  view.querySelectorAll('[data-target]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { target: +b.dataset.target }));
+}
+const startEight = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Ei.newGame(orderOf(g.players), g.settings?.target || 5) });
+
+function renderEight(g) {
+  view.classList.add('game-mode');
+  const s = Ei.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const me_ = me.uid, mine = s.hands[me_] || [];
+  const reveal = s.phase === 'reveal';
+  const myTurn = !reveal && s.turn === me_;
+  const tot = Ei.total(mine);
+  const row = p => {
+    const h = s.hands[p], show = reveal || p === me_;
+    const st = s.bust[p] ? '<span class="pill bust">נשרף</span>' : s.stood[p] ? '<span class="pill">עוצר</span>' : (!reveal && s.turn === p ? '<span class="pill turnp">משחק…</span>' : '');
+    const win = reveal && s.roundWinners.includes(p);
+    return `<div class="ei-row ${win ? 'win' : ''} ${!reveal && s.turn === p ? 'turn' : ''}">
+      <div class="ei-name"><b>${esc(names(p))}${p === me_ ? ' (אתה)' : ''}</b><span class="muted">${s.scores[p]} נק׳</span></div>
+      <div class="ei-cards">${h.map((c, i) => i === 0 && !show ? cardBack('tiny-card', '') : pcardHtml(c, 'tiny-card' + (i === 0 && p === me_ && !reveal ? ' hid1' : ''))).join('')}</div>
+      <div class="ei-tot">${show ? `<b>${Ei.fmt(Ei.total(h))}</b>` : (h.length > 1 ? `+${Ei.fmt(Ei.total(h.slice(1)))}` : '')}${win ? ' 🏆' : ''}</div>${st}</div>`;
+  };
+  view.innerHTML = `<div class="table cardtable">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button><div class="grow dir">שמונה וחצי · סיבוב ${s.round} · עד ${s.target}</div></div>
+    <div class="ei-list">${s.order.map(row).join('')}</div>
+    <div class="center" style="gap:12px">
+      ${reveal ? `<div class="status">${s.roundWinners.length ? `🏆 ${s.roundWinners.map(p => esc(names(p))).join(', ')} ${s.roundWinners.length > 1 ? 'מנצחים' : 'מנצח'} בסיבוב` : 'כולם נשרפו – אין נקודה'}</div>
+        ${isHost && !s.winner ? '<button class="btn" id="eiNext">🃏 סיבוב הבא</button>' : ''}`
+      : `<div class="ei-mine">${mine.map((c, i) => pcardHtml(c, 'mid-card' + (i === 0 ? ' hid1' : ''))).join('')}</div>
+        <div class="status">יש לך <b style="font-size:22px">${Ei.fmt(tot)}</b>${myTurn ? '' : ` · התור של ${esc(names(s.turn))}`}</div>
+        ${myTurn ? `<div class="row" style="gap:10px"><button class="btn" id="eiDraw">🃏 עוד קלף</button><button class="btn secondary" id="eiStand">✋ עוצר</button></div>` : ''}
+        <div class="dir">הקלף הראשון שלך מוסתר מהאחרים · J/Q/K = חצי</div>`}
+    </div></div>`;
+  if ($('#eiDraw')) $('#eiDraw').onclick = () => txAct(Ei, st => Ei.draw(st, me_));
+  if ($('#eiStand')) $('#eiStand').onclick = () => txAct(Ei, st => Ei.stand(st, me_));
+  if ($('#eiNext')) $('#eiNext').onclick = () => txAct(Ei, st => Ei.nextRound(st));
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if (s.winner) winDialog(g, s.winner === me_ ? 'ניצחת!' : `${esc(names(s.winner))} ניצח!`, s.winner === me_ ? '🏆' : '🃏', () => startEight(g));
+  else delete $('#modal').dataset.winShown;
+}
+let eiBusy = false;
+function eightTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Ei.norm(structuredClone(g.state));
+  if (s.winner) { finishMulti(g, [s.winner], s.order); return; }
+  if (eiBusy || s.phase !== 'play' || !g.players[s.turn]?.bot) return;
+  eiBusy = true; const gid = curGid, cur = s.turn, n = s.hands[cur].length;
+  setTimeout(() => txAct(Ei, st => {
+    if (st.turn !== cur || st.hands[cur].length !== n || st.phase !== 'play') return 'x';
+    return Ei.botMove(st, cur) === 'draw' ? Ei.draw(st, cur) : Ei.stand(st, cur);
+  }).finally(() => { eiBusy = false; if (curGid === gid && curGame) eightTick(curGame); }), 1100);
 }
 
 // ---------- friends ----------
