@@ -542,3 +542,18 @@ html[data-theme="dark"] .cah-white .ans { color: #5b3fd6; }
 .e-slot .ecard { position: absolute; top: 0; left: 2px; }
 .e-slot .ecard.on-top { top: 24px; left: 4px; }
 .e-value b { direction: ltr; }
+
+/* ===== Blackjack ===== */
+.bj-dealer { text-align: center; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.bj-cards { display: flex; gap: 4px; justify-content: center; direction: ltr; }
+.bj-hand { padding: 4px; border-radius: 10px; }
+.bj-hand.active { box-shadow: 0 0 0 2px #ffd84d; }
+.bj-tot { font-size: 13px; margin-top: 3px; text-align: center; }
+.bj-mine { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.bj-mine .bj-tot { font-size: 16px; }
+.pill.out-win, .pill.out-bj { background: var(--ok); color: #fff; } .pill.out-lose, .pill.out-bust { background: #d84a4a; color: #fff; } .pill.out-push { background: #888; color: #fff; }
+.bj-bet { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bj-amt { font-size: 32px; font-weight: 900; color: #ffd84d; }
+.chip-btn { width: 56px; height: 56px; border-radius: 50%; border: 4px dashed rgba(255,255,255,.75); color: #fff; font-weight: 900; font-family: inherit; font-size: 14px; }
+.chip-btn.c1 { background: #d84a4a; } .chip-btn.c5 { background: #1e78e0; } .chip-btn.c25 { background: #2e9e4f; }
+.bj-tot b { font-size: 1.25em; } .bj-betlbl { opacity: .8; margin-inline-start: 4px; }

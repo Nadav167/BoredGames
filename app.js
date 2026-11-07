@@ -22,6 +22,7 @@ import * as Pk from './games/poker.js';
 import * as Cn from './games/codenames.js';
 import * as Ca from './games/cah.js';
 import * as Hi from './games/hitster.js';
+import * as Bj from './games/blackjack.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -51,6 +52,7 @@ const GAMES = [
   { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈', ready: true, min: 3, max: 12 },
   { id: 'chess', name: 'שחמט', ico: '♟️', ready: true, min: 2, max: 2, botLevels: true },
   { id: 'poker', name: 'פוקר', ico: '♠️', ready: true, min: 2, max: 8 },
+  { id: 'blackjack', name: 'בלאק ג׳ק', ico: '🂡', ready: true, min: 1, max: 6 },
   { id: 'codenames', name: 'שם קוד', ico: '🔤', ready: true, min: 4, max: 16, bots: false },
   { id: 'catan', name: 'קטאן', ico: '🏝️' },
   { id: 'hitster', name: 'היטסטר', ico: '🎵', ready: true, min: 2, max: 12, bots: false, table: true },
@@ -341,12 +343,14 @@ async function createGame(type, bots, level) {
   if (type === 'poker') g.settings = Pk.DEFAULT_SETTINGS;
   if (type === 'cah') g.settings = Ca.DEFAULT_SETTINGS;
   if (type === 'hitster') g.settings = Hi.DEFAULT_SETTINGS;
+  if (type === 'blackjack') g.settings = Bj.DEFAULT_SETTINGS;
   if (type === 'codenames') g.settings = { lang: 'he', teams: { [me.uid]: 'r' }, spy: {} };
   if (bots) { g.status = 'playing'; g.state = type === 'chess' ? startChessState(players, 0) : type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
     : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
     : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'rummy' ? Rk.newGame(orderOf(players), 0)
     : type === 'poker' ? Pk.newGame(orderOf(players), Pk.DEFAULT_SETTINGS)
-    : type === 'cah' ? Ca.newGame(orderOf(players), Ca.DEFAULT_SETTINGS) : type === 'eight' ? Ei.newGame(orderOf(players), { target: 7 }) : Taki.newGame(orderOf(players)); }
+    : type === 'cah' ? Ca.newGame(orderOf(players), Ca.DEFAULT_SETTINGS)
+    : type === 'blackjack' ? Bj.newGame(orderOf(players), Bj.DEFAULT_SETTINGS) : type === 'eight' ? Ei.newGame(orderOf(players), { target: 7 }) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -378,6 +382,7 @@ function openGame(gid) {
     else if (g.type === 'codenames') renderCodenames(g);
     else if (g.type === 'cah') { renderCah(g); cahTick(g); }
     else if (g.type === 'hitster') renderHitster(g);
+    else if (g.type === 'blackjack') { renderBj(g); bjTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -411,6 +416,7 @@ function renderLobby(g) {
     ${g.type === 'codenames' ? codenamesSettingsHtml(g, isHost) : ''}
     ${g.type === 'cah' ? cahSettingsHtml(g, isHost) : ''}
     ${g.type === 'hitster' ? hitsterSettingsHtml(g, isHost) : ''}
+    ${g.type === 'blackjack' ? bjSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -437,6 +443,7 @@ function renderLobby(g) {
     if (g.type === 'poker') bindPokerSettings(g);
     if (g.type === 'cah') bindCahSettings(g);
     if (g.type === 'hitster') bindHitsterSettings(g);
+    if (g.type === 'blackjack') bindBjSettings(g);
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -457,6 +464,7 @@ function renderLobby(g) {
       : g.type === 'codenames' ? startCodenames(g)
       : g.type === 'cah' ? startCah(g)
       : g.type === 'hitster' ? startHitster(g)
+      : g.type === 'blackjack' ? startBj(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -2526,6 +2534,104 @@ function renderHitster(g) {
     if (isHost && g.status === 'playing') finishMulti(g, [s.winner], s.order.filter(p => !g.players[p]?.local));
     winDialog(g, `🎵 ${esc(names(s.winner))} ניצח עם ${s.lines[s.winner].length} שירים!`, '🏆', () => startHitster(g));
   } else delete $('#modal').dataset.winShown;
+}
+
+// ---------- Blackjack UI ----------
+const bjSet = g => ({ ...Bj.DEFAULT_SETTINGS, ...(g.settings || {}) });
+function bjSettingsHtml(g, isHost) {
+  const st = bjSet(g);
+  if (!isHost) return `<div class="card"><div class="muted">הגדרות</div><p>${st.chips} צ׳יפים · הימור מינימלי ${st.minBet} · ${st.rounds} סיבובים</p></div>`;
+  const row = (title, key, opts, fmt) => `<div class="muted" style="margin:10px 0 6px">${title}</div>
+    <div class="chips">${opts.map(v => `<button class="chip ${st[key] === v ? 'on' : ''}" data-bj="${key}" data-v="${v}">${fmt(v)}</button>`).join('')}</div>`;
+  return `<div class="card">${row('צ׳יפים בהתחלה', 'chips', [500, 1000, 5000], v => v)}${row('הימור מינימלי', 'minBet', [10, 25, 50], v => v)}
+    ${row('מספר סיבובים', 'rounds', [10, 15, 30], v => `${v} סיבובים`)}<div class="muted" style="font-size:14px">כולם נגד הדילר · בלאק ג׳ק משלם 3:2 · אפשר לפצל זוגות</div></div>`;
+}
+function bindBjSettings(g) {
+  view.querySelectorAll('[data-bj]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { ...bjSet(g), [b.dataset.bj]: +b.dataset.v }));
+}
+const startBj = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Bj.newGame(orderOf(g.players), bjSet(g)) });
+
+let bjAmt = 0, bjKey = '';
+function renderBj(g) {
+  view.classList.add('game-mode');
+  const s = Bj.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const me_ = me.uid;
+  if (bjKey !== s.round + s.phase) { bjKey = s.round + s.phase; if (s.phase === 'bet') bjAmt = Math.min(s.chips[me_], Math.max(s.minBet, bjAmt || s.minBet)); }
+  const hideHole = s.phase === 'play' || s.phase === 'bet';
+  const dealerShown = hideHole ? s.dealer.slice(0, 1) : s.dealer;
+  const dTot = dealerShown.length ? Bj.total(dealerShown).t : '';
+  const outTxt = { win: 'ניצחון', bj: 'בלאק ג׳ק!', push: 'תיקו', lose: 'הפסד', bust: 'נשרף' };
+  const handHtml = (p, size) => (s.hands[p] || []).map((h, i) => {
+    const t = Bj.total(h.cards).t, active = s.cur && s.cur.p === p && s.cur.h === i, r = s.results[p]?.[i];
+    return `<div class="bj-hand ${active ? 'active' : ''}">
+      <div class="bj-cards">${h.cards.map(c => pcardHtml(c, size)).join('')}</div>
+      <div class="bj-tot"><b>${t}</b>${h.bust ? ' 💥' : ''} <span class="bj-betlbl">🪙${h.bet}</span>${r ? ` <span class="pill out-${r.out}">${outTxt[r.out]} ${r.net > 0 ? '+' + r.net : r.net < 0 ? r.net : ''}</span>` : ''}</div></div>`;
+  }).join('');
+  const myTurn = s.phase === 'play' && s.cur?.p === me_;
+  const others = othersFrom(s.order).map(p => `
+    <div class="pk-seat ${s.cur?.p === p ? 'turn' : ''} ${s.chips[p] < s.minBet && !(s.hands[p] || []).length ? 'folded' : ''}">
+      <div class="n">${esc(names(p))}</div><div class="c">💰 ${s.chips[p]}${s.phase === 'bet' ? (s.ready[p] ? ` · הימר ${s.bets[p]}` : ' · מהמר…') : ''}</div>
+      ${handHtml(p, 'tiny-card')}</div>`).join('');
+  let actions = '';
+  if (s.phase === 'bet' && s.chips[me_] >= s.minBet && !s.ready[me_]) {
+    actions = `<div class="bj-bet"><div class="bj-amt">${bjAmt}</div>
+      <div class="row" style="gap:6px;justify-content:center;flex-wrap:wrap">
+        ${[1, 5, 25].map(k => `<button class="chip-btn c${k}" data-add="${s.minBet * k}">+${s.minBet * k}</button>`).join('')}
+        <button class="btn small secondary" id="bjClear">נקה</button><button class="btn small secondary" id="bjAll">הכל</button></div>
+      <button class="btn block" id="bjBet" style="margin-top:8px">הימר ${bjAmt} 🎲</button></div>`;
+  } else if (s.phase === 'bet') actions = `<div class="status">${s.ready[me_] ? 'ממתינים לשאר השחקנים…' : 'אין לך מספיק צ׳יפים – צופה בסיבוב'}</div>`;
+  else if (myTurn) actions = `<div class="row" style="gap:8px;justify-content:center">
+      <button class="btn ok" id="bjHit">קלף</button><button class="btn danger" id="bjStand">עומד</button>
+      ${Bj.canSplit(s, me_) ? '<button class="btn" id="bjSplit">פצל ✂️</button>' : ''}</div>`;
+  else if (s.phase === 'play') actions = `<div class="status">התור של ${esc(names(s.cur?.p))}</div>`;
+  else if (s.phase === 'result' && isHost && !s.over) actions = '<button class="btn" id="bjNext">סיבוב הבא ▶</button>';
+
+  view.innerHTML = `<div class="table pk-t bj-t">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button><div class="grow dir">בלאק ג׳ק · סיבוב ${s.round}/${s.maxRounds} · מינימום ${s.minBet}</div></div>
+    <div class="bj-dealer"><div class="muted" style="color:#fff">🎩 דילר ${dTot !== '' ? `· ${dTot}` : ''}</div>
+      <div class="bj-cards">${dealerShown.map(c => pcardHtml(c, 'mid-card')).join('')}${hideHole && s.dealer.length > 1 ? cardBack('mid-card', '') : ''}</div></div>
+    <div class="pk-seats">${others}</div>
+    <div class="hand-wrap bj-me ${myTurn ? 'turn' : ''}">
+      <div style="text-align:center;margin-bottom:6px"><b>${esc(names(me_))}</b> · 💰 ${s.chips[me_]}</div>
+      <div class="bj-mine">${handHtml(me_, 'mid-card')}</div>
+      <div style="margin-top:8px">${actions}</div></div></div>`;
+
+  const tx = fn => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = Bj.norm(st); return fn(st) ? undefined : st; })
+    .then(r => { if (!r.committed) toast('הפעולה לא התקבלה'); }).catch(() => toast('שגיאת חיבור'));
+  view.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { bjAmt = Math.min(s.chips[me_], bjAmt + +b.dataset.add); renderBj(curGame); });
+  if ($('#bjClear')) $('#bjClear').onclick = () => { bjAmt = s.minBet; renderBj(curGame); };
+  if ($('#bjAll')) $('#bjAll').onclick = () => { bjAmt = s.chips[me_]; renderBj(curGame); };
+  if ($('#bjBet')) $('#bjBet').onclick = () => { const a = bjAmt; tx(st => Bj.bet(st, me_, a)); };
+  if ($('#bjHit')) $('#bjHit').onclick = () => tx(st => Bj.act(st, me_, 'hit'));
+  if ($('#bjStand')) $('#bjStand').onclick = () => tx(st => Bj.act(st, me_, 'stand'));
+  if ($('#bjSplit')) $('#bjSplit').onclick = () => tx(st => Bj.act(st, me_, 'split'));
+  if ($('#bjNext')) $('#bjNext').onclick = () => tx(st => Bj.next(st));
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+  if (s.phase === 'over' || (s.phase === 'result' && s.over)) winDialog(g, s.winner === me_ ? `ניצחת עם ${s.chips[me_]} צ׳יפים!` : `${esc(names(s.winner))} סיים עם הכי הרבה צ׳יפים (${s.chips[s.winner]})`, '🃏', () => startBj(g));
+  else delete $('#modal').dataset.winShown;
+}
+let bjBusy = false, bjAuto = null;
+function bjTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Bj.norm(structuredClone(g.state));
+  clearTimeout(bjAuto);
+  if (s.phase === 'over' || (s.phase === 'result' && s.over)) { finishMulti(g, [s.winner], s.order); return; }
+  const gid = curGid, stamp = s.round + s.phase + JSON.stringify(s.cur) + Object.keys(s.ready).length + JSON.stringify(s.hands).length;
+  const tx = fn => runTransaction(ref(db, `games/${gid}/state`), st => {
+    if (!st) return st; st = Bj.norm(st);
+    if (st.round + st.phase + JSON.stringify(st.cur) + Object.keys(st.ready).length + JSON.stringify(st.hands).length !== stamp) return;
+    return fn(st) ? undefined : st;
+  }).catch(() => {});
+  if (s.phase === 'result') { bjAuto = setTimeout(() => { if (curGid === gid) tx(st => Bj.next(st)); }, 6000); screenOff.push(() => clearTimeout(bjAuto)); return; }
+  if (bjBusy) return;
+  const isBot = p => g.players[p]?.bot;
+  let job = null;
+  if (s.phase === 'bet') { const b = s.order.find(p => isBot(p) && !s.ready[p] && s.chips[p] >= s.minBet); if (b) job = st => Bj.bet(st, b, Bj.botBet(st, b)); }
+  else if (s.phase === 'play' && isBot(s.cur?.p)) { const b = s.cur.p; job = st => Bj.act(st, b, Bj.botAct(st, b)); }
+  if (!job) return;
+  bjBusy = true;
+  setTimeout(() => tx(job).finally(() => { bjBusy = false; if (curGid === gid && curGame) bjTick(curGame); }), 900);
 }
 
 // ---------- friends ----------

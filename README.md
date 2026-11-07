@@ -1,6 +1,6 @@
 # BoredGames
 
-Play games with friends or against bots, in an app you install on your phone (PWA). 15 games are playable; Catan is planned.
+Play games with friends or against bots, in an app you install on your phone (PWA). 16 games are playable; Catan is planned.
 
 **Live:** https://boredgames-il.vercel.app
 
@@ -10,7 +10,7 @@ Play games with friends or against bots, in an app you install on your phone (PW
 - **Unique nicknames**, claimed with a database transaction so two players can't take the same one.
 - **Friends:** requests, a friends list, and live online status (presence that clears itself on disconnect).
 - **Game invites and lobbies**, with real-time sync of every move between all players.
-- **15 games:** Taki, The Imposter, Checkers, Backgammon, Perudo, Cheat, Shithead, Durak, Eight and a Half, Chess,
+- **16 games:** Taki, The Imposter, Checkers, Backgammon, Perudo, Cheat, Shithead, Durak, 8½ (Haim Shafir's card game), Blackjack, Chess,
   Rummikub, Texas Hold'em Poker, Codenames, a Cards Against Humanity–style game (original Hebrew and English decks)
   and Hitster.
 - **Bots** in most games — from simple heuristics up to alpha-beta search (Chess, Checkers) and Monte Carlo equity estimates (Poker).
