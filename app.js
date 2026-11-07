@@ -17,6 +17,7 @@ import * as Sh from './games/shithead.js';
 import * as Du from './games/durak.js';
 import * as Ei from './games/eight.js';
 import * as Cs from './games/chess.js';
+import * as Rk from './games/rummikub.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAxDe5vTn6Mnzjs6_iv8P69tQ1rzz_dJKE',
@@ -42,7 +43,7 @@ const GAMES = [
   { id: 'durak', name: 'דוראק', ico: '🂡', ready: true, min: 2, max: 6 },
   { id: 'eight', name: 'שמונה וחצי', ico: '8½', ready: true, min: 2, max: 8 },
   { id: 'perudo', name: 'פרודו', ico: '🎰', ready: true, min: 2, max: 10, bots: false },
-  { id: 'rummy', name: 'רמי', ico: '🀄' },
+  { id: 'rummy', name: 'רמי', ico: '🀄', ready: true, min: 2, max: 4 },
   { id: 'cah', name: 'קלפים נגד האנושות', ico: '😈' },
   { id: 'chess', name: 'שחמט', ico: '♟️', ready: true, min: 2, max: 2, botLevels: true },
   { id: 'poker', name: 'פוקר', ico: '♠️' },
@@ -332,9 +333,10 @@ async function createGame(type, bots, level) {
   if (type === 'cheat') g.settings = { rule: 'seq' };
   if (type === 'eight') g.settings = { target: 5 };
   if (type === 'chess') g.settings = { minutes: 0 };
+  if (type === 'rummy') g.settings = { turnSec: 0 };
   if (bots) { g.status = 'playing'; g.state = type === 'chess' ? startChessState(players, 0) : type === 'checkers' ? startCheckersState(players, 'il') : type === 'backgammon' ? startBgState(players)
     : type === 'cheat' ? Ch.newGame(orderOf(players), 'seq') : type === 'shithead' ? Sh.newGame(orderOf(players))
-    : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
+    : type === 'durak' ? Du.newGame(orderOf(players)) : type === 'rummy' ? Rk.newGame(orderOf(players), 0) : type === 'eight' ? Ei.newGame(orderOf(players), 5) : Taki.newGame(orderOf(players)); }
   await set(gref, g);
   await set(ref(db, `users/${me.uid}/activeGame`), gref.key);
   go('game', gref.key);
@@ -361,6 +363,7 @@ function openGame(gid) {
     else if (g.type === 'durak') { renderDurak(g); durakTick(g); }
     else if (g.type === 'eight') { renderEight(g); eightTick(g); }
     else if (g.type === 'chess') { renderChess(g); chessTick(g); }
+    else if (g.type === 'rummy') { renderRummi(g); rummiTick(g); }
     else { renderTaki(g); hostTick(g); }
   });
   screenOff.push(off);
@@ -389,6 +392,7 @@ function renderLobby(g) {
     ${g.type === 'cheat' ? cheatSettingsHtml(g, isHost) : ''}
     ${g.type === 'eight' ? eightSettingsHtml(g, isHost) : ''}
     ${g.type === 'chess' ? chessSettingsHtml(g, isHost) : ''}
+    ${g.type === 'rummy' ? rummiSettingsHtml(g, isHost) : ''}
     ${isHost ? `<div class="card"><div class="muted">הזמן חברים</div>
       ${friendIds.length ? friendIds.map(f => `<div class="list-item">
         <span class="dot ${presence[f] ? 'on' : ''}"></span><div class="grow">${esc(friends[f])}</div>
@@ -410,6 +414,7 @@ function renderLobby(g) {
     if (g.type === 'cheat') bindCheatSettings();
     if (g.type === 'eight') bindEightSettings();
     if (g.type === 'chess') bindChessSettings();
+    if (g.type === 'rummy') bindRummiSettings();
     if ($('#addBot')) $('#addBot').onclick = () => {
       if (players.length >= info.max) return toast('החדר מלא');
       const [id, v] = botEntry(players.filter(p => g.players[p].bot).length);
@@ -425,6 +430,7 @@ function renderLobby(g) {
       : g.type === 'durak' ? startDurak(g)
       : g.type === 'eight' ? startEight(g)
       : g.type === 'chess' ? startChess(g)
+      : g.type === 'rummy' ? startRummi(g)
       : update(ref(db, `games/${curGid}`), { status: 'playing', state: Taki.newGame(orderOf(g.players)) });
   }
   $('#leaveBtn').onclick = leaveGame;
@@ -1880,6 +1886,150 @@ function chessTick(g) {
     runTransaction(ref(db, `games/${gid}/state`), st => { if (!st || st.board + st.turn !== before) return; return chessCommit(st, m); })
       .catch(() => {}).finally(() => { csBusy = false; if (curGid === gid && curGame) chessTick(curGame); });
   }, 400);
+}
+
+// ---------- Rummikub UI ----------
+function rummiSettingsHtml(g, isHost) {
+  const t = g.settings?.turnSec || 0, label = n => n ? `${n} שניות לתור` : 'בלי הגבלת זמן';
+  if (!isHost) return `<div class="card"><div class="muted">זמן לתור</div><p><b>${label(t)}</b></p></div>`;
+  return `<div class="card"><div class="muted" style="margin-bottom:8px">זמן לתור</div>
+    <div class="chips">${[0, 60, 90, 120].map(n => `<button class="chip ${t === n ? 'on' : ''}" data-tsec="${n}">${label(n)}</button>`).join('')}</div>
+    <div class="muted" style="font-size:14px">כשהזמן נגמר – השינויים מתבטלים והשחקן שולף אבן</div></div>`;
+}
+function bindRummiSettings() {
+  view.querySelectorAll('[data-tsec]').forEach(b => b.onclick = () => update(ref(db, `games/${curGid}/settings`), { turnSec: +b.dataset.tsec }));
+}
+const startRummi = g => update(ref(db, `games/${curGid}`), { status: 'playing', state: Rk.newGame(orderOf(g.players), g.settings?.turnSec || 0) });
+
+const tileHtml = (t, extra = '', attrs = '') => t.j
+  ? `<div class="rtile joker ${extra}" ${attrs}><span>☺</span></div>`
+  : `<div class="rtile c-${t.c} ${extra}" ${attrs}><span>${t.n}</span></div>`;
+
+let rkW = null, rkKey = '', rkSel = null, rkSort = 'color', rkTimer = null;
+function renderRummi(g) {
+  view.classList.add('game-mode');
+  const s = Rk.norm(structuredClone(g.state)), isHost = g.host === me.uid;
+  const names = p => g.players[p]?.nick || 'שחקן שיצא';
+  const me_ = me.uid, myTurn = !s.winner && s.turn === me_;
+  const key = s.turn + ':' + JSON.stringify(s.table.map(x => x.map(t => t.id))) + ':' + (s.racks[me_] || []).length;
+  if (rkKey !== key || !rkW) { rkKey = key; rkSel = null; rkW = { table: s.table.map(x => x.map(t => t.id)), rack: (s.racks[me_] || []).map(t => t.id) }; }
+  const byId = new Map(); for (const t of s.racks[me_] || []) byId.set(t.id, t); for (const x of s.table) for (const t of x) byId.set(t.id, t);
+  const origRack = new Set((s.racks[me_] || []).map(t => t.id));
+  const tbl = rkW.table.filter(x => x.length).map(x => x.map(id => byId.get(id)));
+  const changed = rkW.rack.length !== origRack.size || JSON.stringify(rkW.table.filter(x => x.length)) !== JSON.stringify(s.table.map(x => x.map(t => t.id)));
+  const allValid = tbl.every(x => Rk.checkSet(x).ok);
+  // opening points from new sets made only of my tiles
+  let openPts = 0;
+  if (!s.opened[me_]) for (const x of tbl) if (x.every(t => origRack.has(t.id)) && Rk.checkSet(x).ok) openPts += Rk.checkSet(x).value;
+  const rack = rkW.rack.map(id => byId.get(id)).sort(rkSort === 'color'
+    ? (a, b) => (a.j ? 9 : Rk.COLORS.indexOf(a.c)) - (b.j ? 9 : Rk.COLORS.indexOf(b.c)) || (a.n || 99) - (b.n || 99)
+    : (a, b) => (a.n || 99) - (b.n || 99) || (a.j ? 9 : Rk.COLORS.indexOf(a.c)) - (b.j ? 9 : Rk.COLORS.indexOf(b.c)));
+  const timeLeft = () => s.timeLimit ? Math.max(0, Math.ceil((s.turnStart + s.timeLimit * 1000 - Date.now()) / 1000)) : null;
+
+  let status;
+  if (s.winner) status = `🏆 ${esc(names(s.winner))} ניצח!${s.endByPool ? ' (הכי מעט נקודות)' : ''}`;
+  else if (!myTurn) status = `התור של ${esc(names(s.turn))}`;
+  else if (!s.opened[me_]) status = `פתיחה: צריך 30 נקודות מהאבנים שלך · יש <b>${openPts}</b>`;
+  else status = changed ? (allValid ? 'הכל תקין – אפשר לסיים תור' : 'יש סט לא תקין (מסומן באדום)') : '<b>התור שלך</b> – הנח אבנים או שלוף';
+
+  view.innerHTML = `<div class="table rk-t">
+    <div class="game-top"><button class="btn small" id="exitBtn">✕ יציאה</button>
+      <div class="grow dir">רמי · בקופה ${s.pool.length}</div>${s.timeLimit && !s.winner ? `<span class="clock ${myTurn ? 'run' : ''}" id="rkClock">${timeLeft()}</span>` : ''}</div>
+    <div class="opps">${othersFrom(s.order).map(p => `<div class="opp ${s.turn === p && !s.winner ? 'turn' : ''}">
+      <div class="n">${esc(names(p))}</div><div class="c">${s.racks[p].length} אבנים${s.opened[p] ? '' : ' · לא פתח'}</div></div>`).join('')}</div>
+    <div class="rk-table">${tbl.map((x, i) => {
+      const ok = Rk.checkSet(x).ok;
+      return `<div class="rk-set ${ok ? '' : 'bad'} ${myTurn && rkSel != null ? 'drop' : ''}" data-set="${i}">${Rk.arrange(x).map(t => tileHtml(t, rkSel === t.id ? 'sel' : '', `data-tile="${t.id}"`)).join('')}</div>`;
+    }).join('')}
+      ${myTurn ? `<div class="rk-set new ${rkSel != null ? 'drop' : ''}" data-set="new">＋ סט חדש</div>` : ''}
+      ${!tbl.length && !myTurn ? '<div class="dir" style="padding:20px">השולחן ריק</div>' : ''}</div>
+    <div class="status" style="margin:6px auto">${status}</div>
+    <div class="rk-rack-wrap">
+      ${myTurn ? `<div class="row" style="justify-content:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        ${changed ? `<button class="btn small secondary" id="rkReset">↩️ בטל</button><button class="btn small ok" id="rkDone" ${allValid ? '' : 'disabled'}>✓ סיים תור</button>`
+          : `<button class="btn small" id="rkDraw">${s.pool.length ? '🎲 שלוף אבן' : 'פס'}</button>`}
+        <button class="btn small secondary" id="rkSort">${rkSort === 'color' ? 'מיין 7-7-7' : 'מיין 7-8-9'}</button></div>` : ''}
+      <div class="rk-rack ${myTurn && rkSel != null && origRack.has(rkSel) && !rkW.rack.includes(rkSel) ? 'drop' : ''}" id="rkRack">${rack.map(t => tileHtml(t, rkSel === t.id ? 'sel' : '', `data-tile="${t.id}"`)).join('')}</div>
+    </div></div>`;
+
+  const sel = id => { rkSel = rkSel === id ? null : id; renderRummi(curGame); };
+  const moveTo = dest => {
+    const id = rkSel; if (id == null) return;
+    rkW.rack = rkW.rack.filter(x => x !== id);
+    rkW.table = rkW.table.map(x => x.filter(y => y !== id));
+    if (dest === 'rack') rkW.rack.push(id);
+    else if (dest === 'new') rkW.table.push([id]);
+    else { const live = rkW.table.filter(x => x.length); live[dest].push(id); rkW.table = live; }
+    rkW.table = rkW.table.filter(x => x.length);
+    rkSel = null; renderRummi(curGame);
+  };
+  view.querySelectorAll('[data-tile]').forEach(el => el.onclick = e => {
+    if (!myTurn) return; e.stopPropagation();
+    const id = +el.dataset.tile;
+    if (rkSel != null && rkSel !== id) {      // tapping a tile inside another set = move selected tile into that set
+      const setEl = el.closest('[data-set]');
+      if (setEl) return moveTo(+setEl.dataset.set);
+      if (el.closest('#rkRack') && origRack.has(rkSel) && !rkW.rack.includes(rkSel)) return moveTo('rack');
+    }
+    if (!s.opened[me_] && !origRack.has(id)) return toast('לפני הפתיחה אי אפשר לגעת באבנים שעל השולחן');
+    sel(id);
+  });
+  view.querySelectorAll('[data-set]').forEach(el => el.onclick = () => {
+    if (!myTurn || rkSel == null) return;
+    moveTo(el.dataset.set === 'new' ? 'new' : +el.dataset.set);
+  });
+  if ($('#rkRack')) $('#rkRack').onclick = () => {
+    if (!myTurn || rkSel == null) return;
+    if (!origRack.has(rkSel)) return toast('אבן מהשולחן לא יכולה לחזור למדף');
+    if (!rkW.rack.includes(rkSel)) moveTo('rack');
+  };
+  const tx = fn => runTransaction(ref(db, `games/${curGid}/state`), st => { if (!st) return st; st = Rk.norm(st); const e = fn(st); if (e) { rkErr = e; return; } return st; })
+    .then(r => { if (!r.committed) toast({ invalid: 'יש סט לא תקין', open30: 'פתיחה צריכה לפחות 30 נקודות', touched: 'בפתיחה אסור לגעת בשולחן', none: 'לא הנחת אף אבן' }[rkErr] || 'הפעולה לא התקבלה'); })
+    .catch(() => toast('שגיאת חיבור'));
+  let rkErr = '';
+  if ($('#rkReset')) $('#rkReset').onclick = () => { rkW = null; renderRummi(curGame); };
+  if ($('#rkSort')) $('#rkSort').onclick = () => { rkSort = rkSort === 'color' ? 'num' : 'color'; renderRummi(curGame); };
+  if ($('#rkDraw')) $('#rkDraw').onclick = () => tx(st => Rk.draw(st, me_));
+  if ($('#rkDone')) $('#rkDone').onclick = () => { const w = rkW; tx(st => Rk.commit(st, me_, w.table.filter(x => x.length), w.rack)); };
+  $('#exitBtn').onclick = () => exitDialog(isHost);
+
+  clearInterval(rkTimer);
+  if (s.timeLimit && !s.winner) {
+    rkTimer = setInterval(() => {
+      if (curGame !== g) return clearInterval(rkTimer);
+      const left = timeLeft(); const el = $('#rkClock'); if (el) el.textContent = left;
+      if (left <= 0 && myTurn) { clearInterval(rkTimer); rkW = null; toast('נגמר הזמן ⏰'); tx(st => st.turn === me_ ? Rk.draw(st, me_) : 'x'); }
+    }, 500);
+    screenOff.push(() => clearInterval(rkTimer));
+  }
+  if (s.winner) winDialog(g, s.winner === me_ ? 'ניצחת!' : `${esc(names(s.winner))} ניצח!`, s.winner === me_ ? '🏆' : '🀄', () => startRummi(g));
+  else delete $('#modal').dataset.winShown;
+}
+let rkBusy = false, rkOverdue = null;
+function rummiTick(g) {
+  if (!g || g.host !== me.uid || g.status !== 'playing' || !g.state) return;
+  const s = Rk.norm(structuredClone(g.state));
+  clearTimeout(rkOverdue);
+  if (s.winner) { finishMulti(g, [s.winner], s.order); return; }
+  const gid = curGid, cur = s.turn, stamp = s.turn + s.turnStart;
+  const tx = fn => runTransaction(ref(db, `games/${gid}/state`), st => {
+    if (!st) return st; st = Rk.norm(st);
+    if (st.turn + st.turnStart !== stamp || st.winner) return;
+    return fn(st) ? undefined : st;
+  }).catch(() => {});
+  if (g.players[cur]?.bot) {
+    if (rkBusy) return;
+    rkBusy = true;
+    setTimeout(() => tx(st => { const m = Rk.botTurn(st, cur); return m.type === 'draw' ? Rk.draw(st, cur) : Rk.commit(st, cur, m.table, m.rack); })
+      .finally(() => { rkBusy = false; if (curGid === gid && curGame) rummiTick(curGame); }), 1500);
+    return;
+  }
+  // a human whose time ran out but who isn't online to act: the host draws for them after a short grace period
+  if (s.timeLimit && cur !== me.uid) {
+    const wait = Math.max(0, s.turnStart + s.timeLimit * 1000 + 4000 - Date.now());
+    rkOverdue = setTimeout(() => { if (curGid === gid) tx(st => Rk.draw(st, cur)); }, wait);
+    screenOff.push(() => clearTimeout(rkOverdue));
+  }
 }
 
 // ---------- friends ----------

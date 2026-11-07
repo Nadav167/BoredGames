@@ -408,3 +408,21 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .clock.run { background: #fff; color: #111; }
 .promo { display: flex; justify-content: center; gap: 10px; }
 .promo button { width: 64px; height: 64px; border-radius: 14px; border: 2px solid var(--line); background: #769656; }
+
+/* ===== Rummikub ===== */
+.table.rk-t { background: radial-gradient(ellipse at center, #2a4d6e, #16304a); }
+.rk-table { flex: 1; display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; padding: 10px; overflow-y: auto; max-height: 48vh; }
+.rk-set { display: flex; gap: 2px; padding: 5px; border-radius: 10px; background: rgba(255,255,255,.08); border: 2px solid transparent; min-height: 52px; align-items: center; }
+.rk-set.bad { border-color: #ff6b6b; background: rgba(255,107,107,.15); }
+.rk-set.new { color: rgba(255,255,255,.7); border: 2px dashed rgba(255,255,255,.35); padding: 0 14px; font-size: 14px; }
+.rk-set.drop { border-color: #ffd84d; cursor: pointer; }
+.rtile { width: 32px; height: 44px; border-radius: 6px; background: linear-gradient(#fffaf0, #efe6d2); box-shadow: 0 2px 0 #c9bc9c, 0 3px 6px rgba(0,0,0,.35);
+  display: grid; place-items: center; font-weight: 900; font-size: 19px; cursor: pointer; user-select: none; transition: transform .12s; flex-shrink: 0; }
+.rtile.c-red { color: #d32f2f; } .rtile.c-blue { color: #1565c0; } .rtile.c-black { color: #212121; } .rtile.c-orange { color: #ef8a00; }
+.rtile.joker span { font-size: 24px; background: linear-gradient(135deg, #d32f2f, #212121); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.rtile.sel { transform: translateY(-6px); box-shadow: 0 0 0 3px #ffd84d, 0 6px 10px rgba(0,0,0,.4); }
+.rk-rack-wrap { background: rgba(0,0,0,.3); padding: 8px 8px 14px; }
+.rk-rack { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; min-height: 50px; padding: 6px; border-radius: 12px;
+  background: linear-gradient(#8a5a33, #6b4423); border: 2px solid transparent; }
+.rk-rack.drop { border-color: #ffd84d; }
+.rk-set, .rk-rack { direction: ltr; }
