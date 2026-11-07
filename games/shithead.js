@@ -1,7 +1,7 @@
 // BoredGames – Shithead (שיט-הד) engine
 // Each player: 3 face-down, 3 face-up, 3 in hand. Before play, swap between hand and face-up.
 // Play 1+ cards of one rank, equal or higher than the pile top (Ace high).
-// 2 resets (anything goes on it), 10 burns the pile (play again),
+// 2 resets (anything goes on it), 10 burns the pile (play again), 7 → next card must be 7 or lower,
 // four of the same rank in a row burns the pile too. Can't play → take the pile.
 // Hand refills to 3 while the deck lasts; then face-up cards, then face-down blind.
 // Last player holding cards is the Shithead.
@@ -34,6 +34,7 @@ export function canPlayRank(s, r) {
   if (r === 2 || r === 10) return true;
   const t = top(s);
   if (!t || t.r === 2) return true;
+  if (t.r === 7) return r <= 7;
   return r >= t.r;
 }
 export const source = (s, p) => s.hands[p].length ? 'hands' : s.up[p].length ? 'up' : s.down[p].length ? 'down' : '';
@@ -141,7 +142,10 @@ export function botMove(s, p) {
   if (src === 'down') return { type: 'flip', idx: Math.floor(Math.random() * s.down[p].length) };
   const cards = s[src][p].filter(c => canPlayRank(s, c.r));
   if (!cards.length) return { type: 'pickup' };
-  cards.sort((a, b) => power(a.r) - power(b.r));
-  const r = cards[0].r;
+  // leading a 7 onto an empty pile can make the 7s circle forever, so save it when there's another choice
+  const lead = c => power(c.r) + (!s.pile.length && c.r === 7 ? 10 : 0);
+  cards.sort((a, b) => lead(a) - lead(b));
+  // now and then vary the choice (more often on a fresh pile), so bots never repeat the same cycle forever
+  const r = Math.random() < (s.pile.length ? 0.2 : 0.35) ? cards[Math.floor(Math.random() * cards.length)].r : cards[0].r;
   return { type: 'play', ids: s[src][p].filter(c => c.r === r).map(c => c.id) };
 }
