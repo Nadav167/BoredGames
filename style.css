@@ -513,3 +513,9 @@ html[data-theme="dark"] .cah-white .ans { color: #5b3fd6; }
 .hi-reveal { text-align: center; border-radius: 18px; padding: 18px; color: #fff; display: flex; flex-direction: column; gap: 2px; }
 .hi-reveal.ok { background: var(--ok); } .hi-reveal.bad { background: #d84a4a; }
 .hi-year { font-size: 46px; font-weight: 900; line-height: 1; }
+
+/* boards: 8 equal rows/columns that content can never stretch (Safari sized rows by the crown glyph) */
+.board { grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr)); }
+.board .sq, .board .csq { min-width: 0; min-height: 0; overflow: hidden; }
+.board .pc { width: 78%; height: auto; aspect-ratio: 1; font-size: clamp(12px, 3.8vw, 24px); }
+.board .cp { line-height: 1; max-height: 100%; }
